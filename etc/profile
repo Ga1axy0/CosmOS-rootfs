@@ -1,0 +1,2 @@
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+[ -f /root/.bashrc ] && . /root/.bashrc
