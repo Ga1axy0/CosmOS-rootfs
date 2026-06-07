@@ -1,1 +1,1 @@
-[ -f ~/.bashrc ] && . ~/.bashrc
+[ -f /etc/profile ] && . /etc/profile

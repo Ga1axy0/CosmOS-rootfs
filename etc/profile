@@ -1,2 +1,8 @@
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/root:/mnt/musl:/mnt/glibc:/mnt/musl/ltp/testcases/bin:/mnt/glibc/ltp/testcases/bin
+export HOME=/root
+export USER=root
+export LOGNAME=root
+export SHELL=/bin/bash
+export PS1='root@xxos:\w# '
+
 [ -f /root/.bashrc ] && . /root/.bashrc
