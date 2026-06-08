@@ -3,6 +3,12 @@ export HOME=/root
 export USER=root
 export LOGNAME=root
 export SHELL=/bin/bash
+export TERM=${TERM:-xterm-256color}
 export PS1='root@CosmOS:\w# '
 
 [ -f /root/.bashrc ] && . /root/.bashrc
+
+if [ "${TERM}" != "dumb" ]; then
+    alias ls='ls --color=auto'
+    alias grep='grep --color=auto'
+fi

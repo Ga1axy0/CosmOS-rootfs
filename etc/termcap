@@ -1,0 +1,9 @@
+xterm-256color|xterm|vt100|vt100-am|dec vt100:\
+	:am:bs:km:mi:ms:xn:xo:\
+	:co#80:it#8:li#24:\
+	:cl=\E[H\E[2J:cd=\E[J:ce=\E[K:ho=\E[H:cm=\E[%i%d;%dH:\
+	:nd=\E[C:up=\E[A:do=\E[B:le=^H:bs=^H:\
+	:so=\E[7m:se=\E[27m:us=\E[4m:ue=\E[24m:md=\E[1m:me=\E[0m:\
+	:mr=\E[7m:mb=\E[5m:\
+	:ku=\E[A:kd=\E[B:kr=\E[C:kl=\E[D:kh=\E[H:@7=\E[F:\
+	:kP=\E[5~:kN=\E[6~:kI=\E[2~:kD=\E[3~:kb=^?:
