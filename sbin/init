@@ -1,1 +1,2 @@
-../bin/busybox
+#!/bin/bash --noediting
+exec /bin/bash --login --noediting
