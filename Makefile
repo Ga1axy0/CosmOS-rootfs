@@ -1,0 +1,56 @@
+SHELL := /bin/bash
+
+PROJECT_ROOT := $(CURDIR)
+SCRIPTS_DIR := $(PROJECT_ROOT)/scripts
+BUILD_DIR := $(PROJECT_ROOT)/build
+STAMP_DIR := $(BUILD_DIR)/.stamps
+
+SCRIPTS := $(sort $(wildcard $(SCRIPTS_DIR)/*.sh))
+SCRIPT_NAMES := $(basename $(notdir $(SCRIPTS)))
+
+.DEFAULT_GOAL := rootfs-init
+
+.PHONY: rootfs-init list clean-stamps help $(SCRIPT_NAMES)
+
+rootfs-init:
+	@mkdir -p "$(STAMP_DIR)"
+	@for script in $(SCRIPTS); do \
+		name="$$(basename "$$script" .sh)"; \
+		stamp="$(STAMP_DIR)/$$name.stamp"; \
+		if [[ -f "$$stamp" && "$$stamp" -nt "$$script" ]]; then \
+			echo "[SKIP] $$name ($(STAMP_DIR))"; \
+			continue; \
+		fi; \
+		echo "[RUN] $$script"; \
+		bash "$$script"; \
+		touch "$$stamp"; \
+		echo "[DONE] $$stamp"; \
+	done
+	@echo "[OK] rootfs init complete"
+
+$(SCRIPT_NAMES):
+	@mkdir -p "$(STAMP_DIR)"
+	@script="$(SCRIPTS_DIR)/$@.sh"; \
+	stamp="$(STAMP_DIR)/$@.stamp"; \
+	if [[ -f "$$stamp" && "$$stamp" -nt "$$script" ]]; then \
+		echo "[SKIP] $@ ($(STAMP_DIR))"; \
+	else \
+		echo "[RUN] $$script"; \
+		bash "$$script"; \
+		touch "$$stamp"; \
+		echo "[DONE] $$stamp"; \
+	fi
+
+list:
+	@printf '%s\n' $(SCRIPT_NAMES)
+
+clean-stamps:
+	@rm -rf "$(STAMP_DIR)"
+	@echo "[OK] removed $(STAMP_DIR)"
+
+help:
+	@echo "Targets:"
+	@echo "  make rootfs-init   Run all scripts in scripts/ once, tracked by build stamps"
+	@echo "  make <script>      Run one script target, e.g. make build-coreutil"
+	@echo "  make list          List available script targets"
+	@echo "  make clean-stamps  Remove build stamps so scripts will run again"

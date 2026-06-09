@@ -1,1 +1,11 @@
 .DS_Store
+
+# build workspace
+/build/
+
+# install outputs
+/rootfs/bin/
+/rootfs/usr/
+/rootfs/lib/
+/rootfs/sbin/
+
