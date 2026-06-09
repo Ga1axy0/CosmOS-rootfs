@@ -1,0 +1,130 @@
+#!/bin/bash
+set -e
+
+# Available testcode names:
+# basic
+# busybox
+# cyclictest
+# iozone
+# iperf
+# libcbench
+# libctest
+# lmbench
+# ltp
+# lua
+# netperf
+# unixbench
+#
+# Example:
+# AUTO_RUN_PATTERN='(basic|busybox|ltp)_testcode\.sh$'
+
+tree=${LTP_TREE:-both}
+pattern=${AUTO_RUN_PATTERN:-'.*_testcode\.sh$'}
+
+enter_manual_shell() {
+    echo
+    echo "[ltp-auto-run] auto run cancelled, entering manual shell"
+    exec /bin/bash --login
+}
+
+enable_interrupt_shell() {
+    trap 'enter_manual_shell' INT
+}
+
+countdown_or_shell() {
+    local secs=${AUTO_RUN_DELAY:-10}
+
+    echo "[ltp-auto-run] press Ctrl-C within ${secs}s to cancel auto run"
+
+    while [ "$secs" -gt 0 ]; do
+        printf '\r[ltp-auto-run] starting in %2ds... ' "$secs"
+        sleep 1
+        secs=$((secs - 1))
+    done
+
+    printf '\r[ltp-auto-run] starting now...     \n'
+}
+
+pick_bases() {
+    case "$tree" in
+        glibc) printf '%s\n' /mnt/glibc ;;
+        musl) printf '%s\n' /mnt/musl ;;
+        both) printf '%s\n' /mnt/glibc /mnt/musl ;;
+        *)
+            echo "[ltp-auto-run] invalid LTP_TREE=$tree" >&2
+            exit 2
+            ;;
+    esac
+}
+
+list_tree_scripts() {
+    local base=$1
+    local matched
+    local script
+    local -a scripts=()
+
+    cd "$base"
+    matched=$(find . -maxdepth 1 -type f | grep -E "$pattern" || true)
+
+    for script in $matched; do
+        [ "$script" = "./ltp_testcode.sh" ] && continue
+        scripts+=("$script")
+    done
+    case "$matched" in
+        *"./ltp_testcode.sh"*)
+            scripts+=("./ltp_testcode.sh")
+            ;;
+    esac
+
+    echo "[ltp-auto-run] selected for $base:"
+    if [ ${#scripts[@]} -eq 0 ]; then
+        echo "  (none)"
+        return
+    fi
+    for script in "${scripts[@]}"; do
+        echo "  ${script#./}"
+    done
+}
+
+run_tree() {
+    local base=$1
+    local script
+    local matched
+    local -a scripts=()
+
+    cd "$base"
+    matched=$(find . -maxdepth 1 -type f | grep -E "$pattern" || true)
+
+    for script in $matched; do
+        [ "$script" = "./ltp_testcode.sh" ] && continue
+        scripts+=("$script")
+    done
+    case "$matched" in
+        *"./ltp_testcode.sh"*)
+            scripts+=("./ltp_testcode.sh")
+            ;;
+    esac
+
+    echo "[ltp-auto-run] base=$base total=${#scripts[@]}"
+    [ ${#scripts[@]} -eq 0 ] && return 0
+    for script in "${scripts[@]}"; do
+        echo "[ltp-auto-run] running $base/${script#./}"
+        if [ "$script" = "./ltp_testcode.sh" ]; then
+            export LTPROOT="$base/ltp"
+            export PATH="$LTPROOT/testcases/bin:$LTPROOT/bin:/bin:/usr/bin:/sbin:/usr/sbin"
+        fi
+        /bin/bash "$script"
+    done
+}
+
+enable_interrupt_shell
+countdown_or_shell
+echo "[ltp-auto-run] tree=$tree pattern=$pattern"
+for base in $(pick_bases); do
+    list_tree_scripts "$base"
+done
+for base in $(pick_bases); do
+    run_tree "$base"
+done
+trap - INT
+echo "[ltp-auto-run] done"
