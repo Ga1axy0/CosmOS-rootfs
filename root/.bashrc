@@ -8,3 +8,6 @@ if [ "${TERM}" != "dumb" ]; then
     alias ls='ls --color=auto'
     alias grep='grep --color=auto'
 fi
+
+export PATH=/mnt/musl/ltp/datafiles:/mnt/glibc/ltp/datafiles:$PATH
+
