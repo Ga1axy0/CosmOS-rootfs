@@ -1,2 +1,0 @@
-#!/bin/sh
-exec /lib/ld-linux-riscv64-lp64d.so.1 --list "$@"
