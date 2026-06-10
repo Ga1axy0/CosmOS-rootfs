@@ -73,7 +73,7 @@ make DESTDIR="$ROOTFS" install
 # 创建 /bin/bash 链接
 if [ -x "$ROOTFS/usr/bin/bash" ]; then
     ln -sf ../usr/bin/bash "$ROOTFS/bin/bash"
-    ln -sf bash "$ROOTFS/bin/sh"  # /bin/sh 链接到 bash
+    # ln -sf bash "$ROOTFS/bin/sh"  # /bin/sh 链接到 bash
 fi
 
 # strip 减小体积

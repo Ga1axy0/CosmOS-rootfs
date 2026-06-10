@@ -5,7 +5,9 @@ SCRIPTS_DIR := $(PROJECT_ROOT)/scripts
 BUILD_DIR := $(PROJECT_ROOT)/build
 STAMP_DIR := $(BUILD_DIR)/.stamps
 
-SCRIPTS := $(sort $(wildcard $(SCRIPTS_DIR)/*.sh))
+PRIORITY_SCRIPT := $(SCRIPTS_DIR)/build-busybox.sh
+OTHER_SCRIPTS := $(filter-out $(PRIORITY_SCRIPT),$(sort $(wildcard $(SCRIPTS_DIR)/*.sh)))
+SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(OTHER_SCRIPTS)
 SCRIPT_NAMES := $(basename $(notdir $(SCRIPTS)))
 
 .DEFAULT_GOAL := rootfs-init

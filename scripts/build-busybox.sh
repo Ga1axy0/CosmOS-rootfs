@@ -103,7 +103,10 @@ disable_config CONFIG_FEATURE_TC_INGRESS
 rm -f .config.bak
 
 echo "[INFO] make oldconfig (accept defaults for new symbols)"
+
+set +o pipefail
 yes "" | make oldconfig
+set -o pipefail
 
 echo "[INFO] build busybox"
 make -j"$JOBS"
@@ -122,14 +125,55 @@ fi
 
 echo "[OK] busybox installed only as $ROOTFS/bin/busybox"
 
-echo "[INFO] create /sbin/ip -> ../bin/busybox"
-mkdir -p "$ROOTFS/sbin"
-ln -sf ../bin/busybox "$ROOTFS/sbin/ip"
+if [ ! -s busybox.links ]; then
+    echo "[INFO] generate busybox.links"
+    make busybox.links
+fi
+
+if [ ! -s busybox.links ]; then
+    echo "[ERROR] busybox.links 没有生成"
+    exit 1
+fi
+
+echo "[INFO] create BusyBox applet symlinks from busybox.links"
+while IFS= read -r applet_path; do
+    [ -n "$applet_path" ] || continue
+
+    case "$(basename "$applet_path")" in
+        init | linuxrc)
+            echo "[INFO] skip applet symlink: $applet_path"
+            continue
+            ;;
+    esac
+
+    appdir="$(dirname "$applet_path")"
+    case "$appdir" in
+        /)
+            bb_path="bin/busybox"
+            ;;
+        /bin)
+            bb_path="busybox"
+            ;;
+        /sbin)
+            bb_path="../bin/busybox"
+            ;;
+        /usr/bin | /usr/sbin)
+            bb_path="../../bin/busybox"
+            ;;
+        *)
+            echo "[WARN] skip unsupported BusyBox applet path: $applet_path"
+            continue
+            ;;
+    esac
+
+    mkdir -p "$ROOTFS$appdir"
+    ln -snf "$bb_path" "$ROOTFS$applet_path"
+done < busybox.links
 
 echo "[OK] busybox installed"
 echo "[INFO] check:"
 ls -l "$ROOTFS/bin/busybox"
-ls -l "$ROOTFS/sbin/ip"
+ls -l "$ROOTFS/sbin/ip" 2>/dev/null || true
 file "$ROOTFS/bin/busybox" || true
 
 echo "[INFO] check:"
