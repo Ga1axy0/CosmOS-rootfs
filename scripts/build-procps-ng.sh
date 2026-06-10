@@ -5,6 +5,7 @@ PKG=procps-ng
 VERSION=4.0.5
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common-musl-env.sh"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 ROOTFS="$PROJECT_ROOT/rootfs"
@@ -15,17 +16,14 @@ TARBALL="$THIRD_PARTY/${PKG}-${VERSION}.tar.xz"
 SRC_DIR="$BUILD_ROOT/${PKG}-${VERSION}-src"
 BUILD_DIR="$BUILD_ROOT/${PKG}-${VERSION}-build"
 
-TARGET="riscv64-linux-gnu"
-CROSS_PREFIX="${TARGET}-"
 PREFIX="/usr"
-
-JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+setup_musl_toolchain
 
 echo "[INFO] project root : $PROJECT_ROOT"
 echo "[INFO] rootfs       : $ROOTFS"
 echo "[INFO] tarball      : $TARBALL"
-echo "[INFO] target       : $TARGET"
 echo "[INFO] build dir    : $BUILD_DIR"
+log_musl_toolchain
 
 if [ ! -f "$TARBALL" ]; then
     echo "[ERROR] 找不到 procps-ng 源码包: $TARBALL"
@@ -42,14 +40,6 @@ mkdir -p "$SRC_DIR" "$BUILD_DIR"
 tar xf "$TARBALL" -C "$SRC_DIR" --strip-components=1
 
 cd "$BUILD_DIR"
-
-export CC="${CROSS_PREFIX}gcc"
-export AR="${CROSS_PREFIX}ar"
-export AS="${CROSS_PREFIX}as"
-export LD="${CROSS_PREFIX}ld"
-export RANLIB="${CROSS_PREFIX}ranlib"
-export STRIP="${CROSS_PREFIX}strip"
-export FORCE_UNSAFE_CONFIGURE=1
 
 "$SRC_DIR/configure" \
     --host="$TARGET" \

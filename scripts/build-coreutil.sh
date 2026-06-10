@@ -6,6 +6,7 @@ VERSION=9.5
 
 # 当前脚本路径：scripts/build-coreutil.sh
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common-musl-env.sh"
 
 # 项目根目录：scripts 的上一级
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -18,19 +19,14 @@ TARBALL="$THIRD_PARTY/coreutils-${VERSION}.tar.xz"
 SRC_DIR="$BUILD_ROOT/${PKG}-${VERSION}-src"
 BUILD_DIR="$BUILD_ROOT/${PKG}-${VERSION}-build"
 
-# ===== 目标架构：按你的工具链修改 =====
-TARGET="riscv64-linux-gnu"
-CROSS_PREFIX="${TARGET}-"
-
 PREFIX="/usr"
-
-JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+setup_musl_toolchain
 
 echo "[INFO] project root : $PROJECT_ROOT"
 echo "[INFO] rootfs       : $ROOTFS"
 echo "[INFO] tarball      : $TARBALL"
-echo "[INFO] target       : $TARGET"
 echo "[INFO] build dir    : $BUILD_DIR"
+log_musl_toolchain
 
 if [ ! -f "$TARBALL" ]; then
     echo "[ERROR] 找不到源码包: $TARBALL"
@@ -73,16 +69,6 @@ gl_cv_func_printf_infinite_long_double=yes
 gl_cv_func_printf_sizes_c99=yes
 gl_cv_func_printf_long_double=yes
 EOF
-
-export CC="${CROSS_PREFIX}gcc"
-export AR="${CROSS_PREFIX}ar"
-export AS="${CROSS_PREFIX}as"
-export LD="${CROSS_PREFIX}ld"
-export RANLIB="${CROSS_PREFIX}ranlib"
-export STRIP="${CROSS_PREFIX}strip"
-
-# root 下编译 GNU coreutils 需要这个
-export FORCE_UNSAFE_CONFIGURE=1
 
 "$SRC_DIR/configure" \
     --host="$TARGET" \

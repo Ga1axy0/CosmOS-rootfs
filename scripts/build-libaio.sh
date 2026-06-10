@@ -5,6 +5,7 @@ PKG=libaio
 VERSION=0.3.113
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common-musl-env.sh"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 ROOTFS="$PROJECT_ROOT/rootfs"
@@ -14,17 +15,18 @@ BUILD_ROOT="$PROJECT_ROOT/build"
 TARBALL="$THIRD_PARTY/${PKG}-${VERSION}.tar.gz"
 SRC_DIR="$BUILD_ROOT/${PKG}-${VERSION}-src"
 
-TARGET="riscv64-linux-gnu"
-CROSS_PREFIX="${TARGET}-"
 PREFIX="/usr"
-
-JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+setup_musl_toolchain
+# libaio 的上游 Makefile 同时会尝试生成共享库，这里只保留 musl 交叉工具链，
+# 不把全局 -static LDFLAGS 传进去，避免共享库目标和静态链接参数冲突。
+unset LDFLAGS
 
 echo "[INFO] project root : $PROJECT_ROOT"
 echo "[INFO] rootfs       : $ROOTFS"
 echo "[INFO] tarball      : $TARBALL"
-echo "[INFO] target       : $TARGET"
 echo "[INFO] source dir   : $SRC_DIR"
+log_musl_toolchain
+echo "[INFO] install mode : static archive only"
 
 if [ ! -f "$TARBALL" ]; then
     echo "[ERROR] 找不到 libaio 源码包: $TARBALL"
@@ -42,11 +44,6 @@ tar xf "$TARBALL" -C "$SRC_DIR" --strip-components=1
 
 cd "$SRC_DIR"
 
-export CC="${CROSS_PREFIX}gcc"
-export AR="${CROSS_PREFIX}ar"
-export RANLIB="${CROSS_PREFIX}ranlib"
-export STRIP="${CROSS_PREFIX}strip"
-
 make -j"$JOBS" \
     CC="$CC" \
     AR="$AR" \
@@ -57,33 +54,16 @@ make -j"$JOBS" \
 # 这里手动安装最稳。
 install -Dm644 src/libaio.h "$ROOTFS/usr/include/libaio.h"
 
-if [ -f src/libaio.a ]; then
-    install -Dm644 src/libaio.a "$ROOTFS/usr/lib/libaio.a"
-    "$RANLIB" "$ROOTFS/usr/lib/libaio.a" 2>/dev/null || true
-fi
-
-# 共享库一般是 src/libaio.so.1.0.2
-SO_REAL="$(find src -maxdepth 1 -type f -name 'libaio.so.*.*.*' | head -n 1)"
-
-if [ -z "$SO_REAL" ]; then
-    echo "[ERROR] 没找到生成的 libaio.so.x.y.z"
-    find src -maxdepth 1 -name 'libaio.so*' -ls
+if [ ! -f src/libaio.a ]; then
+    echo "[ERROR] 没找到生成的静态库 src/libaio.a"
     exit 1
 fi
 
-SO_BASENAME="$(basename "$SO_REAL")"
+install -Dm644 src/libaio.a "$ROOTFS/usr/lib/libaio.a"
+"$RANLIB" "$ROOTFS/usr/lib/libaio.a" 2>/dev/null || true
 
-install -Dm755 "$SO_REAL" "$ROOTFS/usr/lib/$SO_BASENAME"
-
-ln -sf "$SO_BASENAME" "$ROOTFS/usr/lib/libaio.so.1"
-ln -sf "libaio.so.1" "$ROOTFS/usr/lib/libaio.so"
-
-"$STRIP" "$ROOTFS/usr/lib/$SO_BASENAME" 2>/dev/null || true
-
-echo "[OK] libaio installed:"
-ls -l "$ROOTFS/usr/lib"/libaio.so*
+echo "[OK] libaio static archive installed:"
 ls -l "$ROOTFS/usr/lib"/libaio.a 2>/dev/null || true
 ls -l "$ROOTFS/usr/include/libaio.h"
 
-file "$ROOTFS/usr/lib/$SO_BASENAME" || true
-"${CROSS_PREFIX}readelf" -d "$ROOTFS/usr/lib/$SO_BASENAME" | grep SONAME || true
+file "$ROOTFS/usr/lib/libaio.a" || true

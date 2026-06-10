@@ -11,6 +11,7 @@ PKG=busybox
 VERSION=1.36.1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common-musl-env.sh"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 ROOTFS="$PROJECT_ROOT/rootfs"
@@ -20,30 +21,13 @@ BUILD_ROOT="$PROJECT_ROOT/build"
 TARBALL="$THIRD_PARTY/${PKG}-${VERSION}.tar.bz2"
 SRC_DIR="$BUILD_ROOT/${PKG}-${VERSION}-src"
 
-TARGET="${TARGET:-riscv64-linux-musl}"
-CROSS_PREFIX="${CROSS_PREFIX:-${TARGET}-}"
-TOOLCHAIN_BIN="${TOOLCHAIN_BIN:-/opt/riscv64-linux-musl-cross/bin}"
-
-JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+setup_musl_toolchain
 
 echo "[INFO] project root : $PROJECT_ROOT"
 echo "[INFO] rootfs       : $ROOTFS"
 echo "[INFO] tarball      : $TARBALL"
-echo "[INFO] target       : $TARGET"
-echo "[INFO] cross prefix : $CROSS_PREFIX"
 echo "[INFO] source dir   : $SRC_DIR"
-
-if ! command -v "${CROSS_PREFIX}gcc" >/dev/null 2>&1; then
-    if [ -x "${TOOLCHAIN_BIN}/${CROSS_PREFIX}gcc" ]; then
-        export PATH="${TOOLCHAIN_BIN}:$PATH"
-    else
-        echo "[ERROR] 找不到 musl 交叉编译器: ${CROSS_PREFIX}gcc"
-        echo "[HINT] 可选方案:"
-        echo "       1. 把 ${CROSS_PREFIX}gcc 加到 PATH"
-        echo "       2. 设置 TOOLCHAIN_BIN=/your/toolchain/bin"
-        exit 1
-    fi
-fi
+log_musl_toolchain
 
 if [ ! -f "$TARBALL" ]; then
     echo "[ERROR] 找不到 busybox 源码包: $TARBALL"
@@ -63,8 +47,6 @@ cd "$SRC_DIR"
 
 export ARCH=riscv
 export CROSS_COMPILE="$CROSS_PREFIX"
-READELF_BIN="${READELF_BIN:-${CROSS_PREFIX}readelf}"
-STRIP_BIN="${STRIP_BIN:-${CROSS_PREFIX}strip}"
 
 disable_config() {
     local symbol="$1"

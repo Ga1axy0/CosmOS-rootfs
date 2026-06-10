@@ -4,6 +4,17 @@ PROJECT_ROOT := $(CURDIR)
 SCRIPTS_DIR := $(PROJECT_ROOT)/scripts
 BUILD_DIR := $(PROJECT_ROOT)/build
 STAMP_DIR := $(BUILD_DIR)/.stamps
+TARGET ?= riscv64-linux-musl
+COMMON_LDFLAGS ?= -static
+
+export TARGET
+export CROSS_PREFIX
+export TOOLCHAIN_BIN
+export JOBS
+export COMMON_CFLAGS
+export COMMON_CXXFLAGS
+export COMMON_CPPFLAGS
+export COMMON_LDFLAGS
 
 PRIORITY_SCRIPT := $(SCRIPTS_DIR)/build-busybox.sh
 OTHER_SCRIPTS := $(filter-out $(PRIORITY_SCRIPT),$(sort $(wildcard $(SCRIPTS_DIR)/*.sh)))
