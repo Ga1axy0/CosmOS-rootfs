@@ -54,6 +54,9 @@ if [ -d "$MUSL_LIB" ]; then
     if [ -e "$ROOTFS/lib/libc.so" ] && [ ! -e "$ROOTFS/lib/ld-musl-riscv64.so.1" ]; then
         ln -sf libc.so "$ROOTFS/lib/ld-musl-riscv64.so.1"
     fi
+    if [ -e "$ROOTFS/lib/libc.so" ] && [ ! -e "$ROOTFS/lib/ld-musl-riscv64-sf.so.1" ]; then
+        ln -sf libc.so "$ROOTFS/lib/ld-musl-riscv64-sf.so.1"
+    fi
 else
     echo "[WARN] musl lib dir not found: $MUSL_LIB"
 fi
