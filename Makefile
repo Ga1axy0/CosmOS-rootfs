@@ -23,7 +23,7 @@ SCRIPT_NAMES := $(basename $(notdir $(SCRIPTS)))
 
 .DEFAULT_GOAL := rootfs-init
 
-.PHONY: rootfs-init list clean-stamps help $(SCRIPT_NAMES)
+.PHONY: rootfs-init list clean clean-stamps help $(SCRIPT_NAMES)
 
 rootfs-init:
 	@mkdir -p "$(STAMP_DIR)"
@@ -61,9 +61,14 @@ clean-stamps:
 	@rm -rf "$(STAMP_DIR)"
 	@echo "[OK] removed $(STAMP_DIR)"
 
+clean:
+	@rm -rf "$(BUILD_DIR)" "$(PROJECT_ROOT)/rootfs"
+	@echo "[OK] removed rootfs build outputs"
+
 help:
 	@echo "Targets:"
 	@echo "  make rootfs-init   Run all scripts in scripts/ once, tracked by build stamps"
 	@echo "  make <script>      Run one script target, e.g. make build-coreutil"
+	@echo "  make clean         Remove build directory and generated rootfs"
 	@echo "  make list          List available script targets"
 	@echo "  make clean-stamps  Remove build stamps so scripts will run again"
