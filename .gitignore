@@ -7,5 +7,5 @@
 /rootfs/bin/
 /rootfs/usr/
 /rootfs/lib/
-/rootfs/sbin/
-
+/rootfs/sbin/*
+!/rootfs/sbin/init

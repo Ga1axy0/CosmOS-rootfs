@@ -5,6 +5,7 @@ BASE=/mnt/glibc
 LTPROOT="$BASE/ltp"
 export LTPROOT
 export PATH="$LTPROOT/testcases/bin:$LTPROOT/bin:/bin:/usr/bin:/sbin:/usr/sbin"
+LTP_RUNNER=${LTP_RUNNER:-serial}
 
 if [ ! -x "$LTPROOT/runltp" ]; then
     echo "[ltp-run-glibc] missing executable: $LTPROOT/runltp" >&2
@@ -13,15 +14,130 @@ fi
 
 cd "$LTPROOT"
 
+filter_existing_suites() {
+    local requested=$1
+    local suite
+    local suites=
+    local skipped=
+
+    requested=$(printf '%s\n' "$requested" | tr ',' ' ')
+    for suite in $requested; do
+        [ -n "$suite" ] || continue
+        if [ -f "$LTPROOT/runtest/$suite" ]; then
+            if [ -n "$suites" ]; then
+                suites="$suites,$suite"
+            else
+                suites="$suite"
+            fi
+        else
+            skipped="$skipped $suite"
+        fi
+    done
+
+    if [ -n "$skipped" ]; then
+        echo "[ltp-run-glibc] skipping missing runtest suites:$skipped" >&2
+    fi
+    if [ -z "$suites" ]; then
+        echo "[ltp-run-glibc] no runnable LTP suites found" >&2
+        exit 2
+    fi
+
+    printf '%s\n' "$suites"
+}
+
+run_with_runltp() {
+    set +e
+    ./runltp -f "$LTP_SUITES"
+    ret=$?
+    set -e
+    return "$ret"
+}
+
+run_serial() {
+    local tmp
+    local alltests
+    local suite
+    local line
+    local tag
+    local cmd
+    local ret
+    local passed=0
+    local failed=0
+    local skipped=0
+    local total=0
+
+    mkdir -p "$LTPROOT/output" "$LTPROOT/results" /tmp
+    tmp=$(mktemp -d /tmp/ltp-serial.XXXXXX)
+    chmod 777 "$tmp"
+    alltests="$tmp/alltests"
+    : > "$alltests"
+
+    for suite in $(printf '%s\n' "$LTP_SUITES" | tr ',' ' '); do
+        cat "$LTPROOT/runtest/$suite" >> "$alltests"
+    done
+
+    printf 'y\n' | "$LTPROOT/IDcheck.sh" || true
+
+    while IFS= read -r line; do
+        case "$line" in
+            ''|\#*) continue ;;
+        esac
+        if [[ ! "$line" =~ ^[[:space:]]*([^[:space:]]+)[[:space:]]+(.*)$ ]]; then
+            continue
+        fi
+        tag=${BASH_REMATCH[1]}
+        cmd=${BASH_REMATCH[2]}
+        total=$((total + 1))
+
+        echo "<<<test_start>>> $tag"
+        set +e
+        (
+            cd "$tmp"
+            export TMPDIR="$tmp"
+            /bin/sh -c "$cmd"
+        )
+        ret=$?
+        set -e
+
+        case "$ret" in
+            0)
+                passed=$((passed + 1))
+                echo "<<<test_result>>> $tag PASS rc=$ret"
+                ;;
+            32)
+                skipped=$((skipped + 1))
+                echo "<<<test_result>>> $tag SKIP rc=$ret"
+                ;;
+            *)
+                failed=$((failed + 1))
+                echo "<<<test_result>>> $tag FAIL rc=$ret"
+                ;;
+        esac
+    done < "$alltests"
+
+    rm -rf "$tmp"
+    echo "#### LTP SERIAL SUMMARY glibc total=$total passed=$passed failed=$failed skipped=$skipped ####"
+    [ "$failed" -eq 0 ]
+}
+
 if [ -z "${LTP_SUITES:-}" ]; then
     LTP_SUITES=$(tr '\n' ',' < "$LTPROOT/scenario_groups/default" | sed 's/,$//')
 fi
+LTP_SUITES=$(filter_existing_suites "$LTP_SUITES")
 
 echo "#### LTP FULL START glibc ####"
 echo "[ltp-run-glibc] LTPROOT=$LTPROOT"
 echo "[ltp-run-glibc] suites=$LTP_SUITES"
+echo "[ltp-run-glibc] runner=$LTP_RUNNER"
 set +e
-./runltp -f "$LTP_SUITES"
+case "$LTP_RUNNER" in
+    runltp) run_with_runltp ;;
+    serial) run_serial ;;
+    *)
+        echo "[ltp-run-glibc] invalid LTP_RUNNER=$LTP_RUNNER" >&2
+        false
+        ;;
+esac
 ret=$?
 set -e
 echo "#### LTP FULL END glibc rc=$ret ####"
