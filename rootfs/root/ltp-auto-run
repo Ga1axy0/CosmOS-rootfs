@@ -101,8 +101,10 @@ run_one_script() {
     (
         cd "$base"
         if [ "$script" = "ltp_testcode.sh" ]; then
-            export LTPROOT="$base/ltp"
-            export PATH="$LTPROOT/testcases/bin:$LTPROOT/bin:/bin:/usr/bin:/sbin:/usr/sbin"
+            case "$base" in
+                /mnt/musl) exec /bin/bash /root/ltp-run-musl ;;
+                /mnt/glibc) exec /bin/bash /root/ltp-run-glibc ;;
+            esac
         fi
         /bin/bash "$script"
     )

@@ -1,0 +1,28 @@
+#!/bin/bash
+set -e
+
+BASE=/mnt/musl
+LTPROOT="$BASE/ltp"
+export LTPROOT
+export PATH="$LTPROOT/testcases/bin:$LTPROOT/bin:/bin:/usr/bin:/sbin:/usr/sbin"
+
+if [ ! -x "$LTPROOT/runltp" ]; then
+    echo "[ltp-run-musl] missing executable: $LTPROOT/runltp" >&2
+    exit 2
+fi
+
+cd "$LTPROOT"
+
+if [ -z "${LTP_SUITES:-}" ]; then
+    LTP_SUITES=$(tr '\n' ',' < "$LTPROOT/scenario_groups/default" | sed 's/,$//')
+fi
+
+echo "#### LTP FULL START musl ####"
+echo "[ltp-run-musl] LTPROOT=$LTPROOT"
+echo "[ltp-run-musl] suites=$LTP_SUITES"
+set +e
+./runltp -f "$LTP_SUITES"
+ret=$?
+set -e
+echo "#### LTP FULL END musl rc=$ret ####"
+exit "$ret"
