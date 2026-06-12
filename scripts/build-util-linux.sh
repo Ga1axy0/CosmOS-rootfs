@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common-musl-env.sh"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-ROOTFS="$PROJECT_ROOT/rootfs"
+ROOTFS="${ROOTFS_DIR:-$PROJECT_ROOT/rootfs}"
 THIRD_PARTY="$PROJECT_ROOT/third-party"
 BUILD_ROOT="$PROJECT_ROOT/build"
 

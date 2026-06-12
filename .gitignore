@@ -9,3 +9,5 @@
 /rootfs/lib/
 /rootfs/sbin/*
 !/rootfs/sbin/init
+/rootfs-la/
+/rootfs-rv/
