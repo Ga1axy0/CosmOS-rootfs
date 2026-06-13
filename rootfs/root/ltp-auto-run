@@ -113,7 +113,7 @@ run_one_script() {
             /bin/bash "$runner"
             ret=$?
             set -e
-            echo "#### OS COMP TEST GROUP END $group ####"
+            echo "#### OS COMP TEST GROUP END ####"
             exit "$ret"
         fi
         /bin/bash "$script"

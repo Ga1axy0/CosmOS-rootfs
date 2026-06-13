@@ -89,7 +89,7 @@ run_serial() {
         cmd=${BASH_REMATCH[2]}
         total=$((total + 1))
 
-        echo "<<<test_start>>> $tag"
+        echo "RUN LTP CASE $tag"
         set +e
         (
             cd "$tmp"
@@ -102,21 +102,19 @@ run_serial() {
         case "$ret" in
             0)
                 passed=$((passed + 1))
-                echo "<<<test_result>>> $tag PASS rc=$ret"
                 ;;
             32)
                 skipped=$((skipped + 1))
-                echo "<<<test_result>>> $tag SKIP rc=$ret"
                 ;;
             *)
                 failed=$((failed + 1))
-                echo "<<<test_result>>> $tag FAIL rc=$ret"
                 ;;
         esac
+        echo "FAIL LTP CASE $tag : $ret"
+        echo
     done < "$alltests"
 
     rm -rf "$tmp"
-    echo "#### LTP SERIAL SUMMARY glibc total=$total passed=$passed failed=$failed skipped=$skipped ####"
     [ "$failed" -eq 0 ]
 }
 
@@ -125,10 +123,6 @@ if [ -z "${LTP_SUITES:-}" ]; then
 fi
 LTP_SUITES=$(filter_existing_suites "$LTP_SUITES")
 
-echo "#### LTP FULL START glibc ####"
-echo "[ltp-run-glibc] LTPROOT=$LTPROOT"
-echo "[ltp-run-glibc] suites=$LTP_SUITES"
-echo "[ltp-run-glibc] runner=$LTP_RUNNER"
 set +e
 case "$LTP_RUNNER" in
     runltp) run_with_runltp ;;
@@ -140,5 +134,4 @@ case "$LTP_RUNNER" in
 esac
 ret=$?
 set -e
-echo "#### LTP FULL END glibc rc=$ret ####"
 exit "$ret"
