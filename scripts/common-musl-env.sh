@@ -3,7 +3,21 @@
 TARGET="${TARGET:-riscv64-linux-musl}"
 CROSS_PREFIX="${CROSS_PREFIX:-${TARGET}-}"
 TOOLCHAIN_BIN="${TOOLCHAIN_BIN:-/opt/riscv64-linux-musl-cross/bin}"
-JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu)}"
+
+detect_host_jobs() {
+    local jobs
+
+    jobs="$(nproc 2>/dev/null || true)"
+    if [ -z "$jobs" ] && command -v sysctl >/dev/null 2>&1; then
+        jobs="$(sysctl -n hw.ncpu 2>/dev/null || true)"
+    fi
+    case "$jobs" in
+        ''|*[!0-9]*) jobs=1 ;;
+    esac
+    printf '%s\n' "$jobs"
+}
+
+JOBS="${JOBS:-$(detect_host_jobs)}"
 
 COMMON_CFLAGS="${COMMON_CFLAGS:--Os}"
 COMMON_CXXFLAGS="${COMMON_CXXFLAGS:-$COMMON_CFLAGS}"
