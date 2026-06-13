@@ -41,6 +41,8 @@ tar xf "$TARBALL" -C "$SRC_DIR" --strip-components=1
 
 cd "$BUILD_DIR"
 
+ac_cv_func_malloc_0_nonnull=yes \
+ac_cv_func_realloc_0_nonnull=yes \
 "$SRC_DIR/configure" \
     --host="$TARGET" \
     --prefix="$PREFIX" \
