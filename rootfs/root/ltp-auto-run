@@ -21,7 +21,7 @@ set -e
 
 tree=${LTP_TREE:-both}
 pattern=${AUTO_RUN_PATTERN:-'.*_testcode\.sh$'}
-order=${AUTO_RUN_ORDER:-'basic busybox cyclictest iozone iperf libcbench libctest lmbench lua netperf unixbench ltp'}
+order=${AUTO_RUN_ORDER:-'netperf iperf basic busybox cyclictest iozone libcbench libctest lmbench lua unixbench ltp'}
 
 enter_manual_shell() {
     echo
@@ -99,15 +99,13 @@ run_one_script() {
     local runner
     local ret
 
-    [ -f "$path" ] || return 0
-    echo "[ltp-auto-run] running $path"
     (
-        cd "$base"
         if [ "$script" = "ltp_testcode.sh" ]; then
             case "$base" in
                 /mnt/musl) group=ltp-musl; runner=/root/ltp-run-musl ;;
                 /mnt/glibc) group=ltp-glibc; runner=/root/ltp-run-glibc ;;
             esac
+            echo "[ltp-auto-run] running $runner"
             echo "#### OS COMP TEST GROUP START $group ####"
             set +e
             /bin/bash "$runner"
@@ -116,6 +114,25 @@ run_one_script() {
             echo "#### OS COMP TEST GROUP END ####"
             exit "$ret"
         fi
+        if [ "$script" = "netperf_testcode.sh" ]; then
+            case "$base" in
+                /mnt/musl) runner=/root/netperf-run-musl ;;
+                /mnt/glibc) runner=/root/netperf-run-glibc ;;
+            esac
+            echo "[ltp-auto-run] running $runner"
+            exec /bin/bash "$runner"
+        fi
+        if [ "$script" = "iperf_testcode.sh" ]; then
+            case "$base" in
+                /mnt/musl) runner=/root/iperf-run-musl ;;
+                /mnt/glibc) runner=/root/iperf-run-glibc ;;
+            esac
+            echo "[ltp-auto-run] running $runner"
+            exec /bin/bash "$runner"
+        fi
+        [ -f "$path" ] || return 0
+        echo "[ltp-auto-run] running $path"
+        cd "$base"
         /bin/bash "$script"
     )
 }
