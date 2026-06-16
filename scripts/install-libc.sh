@@ -9,27 +9,83 @@ TARGET="${TARGET:-riscv64-linux-musl}"
 MUSL_ARCH="${MUSL_ARCH:-${TARGET%%-*}}"
 MUSL_LIB="${MUSL_LIB:-/opt/riscv64-linux-musl-cross/riscv64-linux-musl/lib}"
 
+glibc_lib_candidates() {
+    local toolchain="$1"
+    local gnu_target="$2"
+
+    printf '%s\n' \
+        "$toolchain/$gnu_target/lib64" \
+        "$toolchain/$gnu_target/lib" \
+        "$toolchain/sysroot/usr/lib64" \
+        "$toolchain/sysroot/usr/lib" \
+        "$toolchain/sysroot/lib64" \
+        "$toolchain/sysroot/lib" \
+        "$toolchain/lib64" \
+        "$toolchain/lib"
+}
+
 find_glibc_lib() {
     local toolchain="$1"
     local gnu_target="${GLIBC_TARGET:-${MUSL_ARCH}-linux-gnu}"
     local candidate
+    local fallback=""
 
     [ -n "$toolchain" ] || return 1
 
-    for candidate in \
-        "$toolchain/$gnu_target/lib64" \
-        "$toolchain/$gnu_target/lib" \
-        "$toolchain/sysroot/lib64" \
-        "$toolchain/sysroot/lib" \
-        "$toolchain/lib64" \
-        "$toolchain/lib"; do
-        if [ -d "$candidate" ]; then
+    while IFS= read -r candidate; do
+        if [ ! -d "$candidate" ]; then
+            continue
+        fi
+
+        if [ -z "$fallback" ]; then
+            fallback="$candidate"
+        fi
+
+        if compgen -G "$candidate/ld-linux*.so*" >/dev/null \
+            || [ -e "$candidate/libc.so.6" ] \
+            || [ -e "$candidate/libm.so.6" ]; then
             printf '%s\n' "$candidate"
+            return 0
+        fi
+    done < <(glibc_lib_candidates "$toolchain" "$gnu_target")
+
+    if [ -n "$fallback" ]; then
+        printf '%s\n' "$fallback"
+        return 0
+    fi
+
+    return 1
+}
+
+copy_first_runtime_match() {
+    local pattern="$1"
+    shift
+
+    local candidate
+    for candidate in "$@"; do
+        [ -d "$candidate" ] || continue
+        if compgen -G "$candidate/$pattern" >/dev/null; then
+            cp -a "$candidate"/$pattern "$ROOTFS/lib/" 2>/dev/null || true
             return 0
         fi
     done
 
     return 1
+}
+
+install_loongarch_lib64_loader_aliases() {
+    [ "$MUSL_ARCH" = "loongarch64" ] || return 0
+
+    mkdir -p "$ROOTFS/lib64"
+
+    if [ -e "$ROOTFS/lib/ld-linux-loongarch-lp64d.so.1" ]; then
+        ln -snf ../lib/ld-linux-loongarch-lp64d.so.1 \
+            "$ROOTFS/lib64/ld-linux-loongarch-lp64d.so.1"
+    fi
+
+    if [ -e "$ROOTFS/lib/libc.so" ]; then
+        ln -snf ../lib/libc.so "$ROOTFS/lib64/ld-musl-loongarch-lp64d.so.1"
+    fi
 }
 
 if [ -z "${GLIBC_LIB:-}" ]; then
@@ -49,6 +105,9 @@ mkdir -p "$ROOTFS/lib" "$ROOTFS/usr/lib"
 echo "[INFO] installing glibc runtime libs..."
 
 if [ -n "$GLIBC_LIB" ] && [ -d "$GLIBC_LIB" ]; then
+    GLIBC_GNU_TARGET="${GLIBC_TARGET:-${MUSL_ARCH}-linux-gnu}"
+    mapfile -t GLIBC_CANDIDATES < <(glibc_lib_candidates "${GLIBC_TOOLCHAIN:-}" "$GLIBC_GNU_TARGET")
+
     cp -a "$GLIBC_LIB"/ld-linux*.so* "$ROOTFS/lib/" 2>/dev/null || true
 
     cp -a "$GLIBC_LIB"/libc.so* "$ROOTFS/lib/" 2>/dev/null || true
@@ -59,8 +118,11 @@ if [ -n "$GLIBC_LIB" ] && [ -d "$GLIBC_LIB" ]; then
     cp -a "$GLIBC_LIB"/libutil.so* "$ROOTFS/lib/" 2>/dev/null || true
     cp -a "$GLIBC_LIB"/libresolv.so* "$ROOTFS/lib/" 2>/dev/null || true
     cp -a "$GLIBC_LIB"/libnss_*.so* "$ROOTFS/lib/" 2>/dev/null || true
+    cp -a "$GLIBC_LIB"/libcrypt.so* "$ROOTFS/lib/" 2>/dev/null || true
+    cp -a "$GLIBC_LIB"/libthread_db.so* "$ROOTFS/lib/" 2>/dev/null || true
+    cp -a "$GLIBC_LIB"/libBrokenLocale.so* "$ROOTFS/lib/" 2>/dev/null || true
 
-    cp -a "$GLIBC_LIB"/libgcc_s.so* "$ROOTFS/lib/" 2>/dev/null || true
+    copy_first_runtime_match "libgcc_s.so*" "$GLIBC_LIB" "${GLIBC_CANDIDATES[@]}"
 else
     echo "[WARN] glibc lib dir not found: $GLIBC_LIB"
 fi
@@ -93,9 +155,13 @@ else
     echo "[WARN] musl lib dir not found: $MUSL_LIB"
 fi
 
+install_loongarch_lib64_loader_aliases
+
 echo "[INFO] installed runtime loaders:"
 ls -l "$ROOTFS/lib"/ld-linux*.so* 2>/dev/null || true
 ls -l "$ROOTFS/lib"/ld-musl-*.so* 2>/dev/null || true
+ls -l "$ROOTFS/lib64"/ld-linux*.so* 2>/dev/null || true
+ls -l "$ROOTFS/lib64"/ld-musl-*.so* 2>/dev/null || true
 
 echo "[INFO] installed libc:"
 ls -l "$ROOTFS/lib"/libc.so* 2>/dev/null || true
