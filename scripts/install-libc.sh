@@ -88,6 +88,16 @@ install_loongarch_lib64_loader_aliases() {
     fi
 }
 
+install_loongarch_usr_lib64_glibc() {
+    [ "$MUSL_ARCH" = "loongarch64" ] || return 0
+    [ -e "$ROOTFS/lib/libc.so.6" ] || return 0
+    [ -e "$ROOTFS/lib/libm.so.6" ] || return 0
+
+    mkdir -p "$ROOTFS/usr/lib64"
+    cp -a "$ROOTFS/lib/libc.so.6" "$ROOTFS/usr/lib64/libc.so.6"
+    cp -a "$ROOTFS/lib/libm.so.6" "$ROOTFS/usr/lib64/libm.so.6"
+}
+
 if [ -z "${GLIBC_LIB:-}" ]; then
     if [ -n "${GLIBC_TOOLCHAIN:-}" ]; then
         GLIBC_LIB="$(find_glibc_lib "$GLIBC_TOOLCHAIN" || true)"
@@ -156,6 +166,7 @@ else
 fi
 
 install_loongarch_lib64_loader_aliases
+install_loongarch_usr_lib64_glibc
 
 echo "[INFO] installed runtime loaders:"
 ls -l "$ROOTFS/lib"/ld-linux*.so* 2>/dev/null || true
