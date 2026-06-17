@@ -95,25 +95,9 @@ run_one_script() {
     local base=$1
     local script=$2
     local path="$base/$script"
-    local group
     local runner
-    local ret
 
     (
-        if [ "$script" = "ltp_testcode.sh" ]; then
-            case "$base" in
-                /mnt/musl) group=ltp-musl; runner=/root/ltp-run-musl ;;
-                /mnt/glibc) group=ltp-glibc; runner=/root/ltp-run-glibc ;;
-            esac
-            echo "[ltp-auto-run] running $runner"
-            echo "#### OS COMP TEST GROUP START $group ####"
-            set +e
-            /bin/bash "$runner"
-            ret=$?
-            set -e
-            echo "#### OS COMP TEST GROUP END ####"
-            exit "$ret"
-        fi
         if [ "$script" = "netperf_testcode.sh" ]; then
             case "$base" in
                 /mnt/musl) runner=/root/netperf-run-musl ;;
