@@ -6,6 +6,7 @@ LTPROOT="$BASE/ltp"
 export LTPROOT
 export PATH="$LTPROOT/testcases/bin:$LTPROOT/bin:/bin:/usr/bin:/sbin:/usr/sbin"
 LTP_RUNNER=${LTP_RUNNER:-serial}
+DEFAULT_SUITE_FILE="$LTPROOT/scenario_groups/default"
 
 if [ ! -x "$LTPROOT/runltp" ]; then
     echo "[ltp-run-musl] missing executable: $LTPROOT/runltp" >&2
@@ -14,40 +15,92 @@ fi
 
 cd "$LTPROOT"
 
-filter_existing_suites() {
-    local requested=$1
-    local suite
-    local suites=
-    local skipped=
+normalize_list() {
+    printf '%s\n' "$1" | tr ',\n\t' '   ' | tr -s ' '
+}
 
-    requested=$(printf '%s\n' "$requested" | tr ',' ' ')
-    for suite in $requested; do
-        [ -n "$suite" ] || continue
+list_contains() {
+    local haystack=$1
+    local needle=$2
+
+    case " $haystack " in
+        *" $needle "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+default_suite_exists() {
+    grep -Fxq -- "$1" "$DEFAULT_SUITE_FILE"
+}
+
+select_existing_suites() {
+    local requested=${LTP_SUITES:-}
+    local requested_list=
+    local skip_list=
+    local selected=
+    local skipped_requested=
+    local skipped_missing=
+    local unknown_requested=
+    local requested_specified=0
+    local suite
+
+    if [ -n "$requested" ]; then
+        requested_specified=1
+        requested_list=$(normalize_list "$requested")
+    fi
+    skip_list=$(normalize_list "${LTP_SKIP_SUITES:-}")
+
+    while IFS= read -r suite; do
+        case "$suite" in
+            ''|\#*) continue ;;
+        esac
+        if [ "$requested_specified" -eq 1 ] && ! list_contains "$requested_list" "$suite"; then
+            continue
+        fi
+        if list_contains "$skip_list" "$suite"; then
+            skipped_requested="$skipped_requested $suite"
+            continue
+        fi
         if [ -f "$LTPROOT/runtest/$suite" ]; then
-            if [ -n "$suites" ]; then
-                suites="$suites,$suite"
+            if [ -n "$selected" ]; then
+                selected="$selected,$suite"
             else
-                suites="$suite"
+                selected="$suite"
             fi
         else
-            skipped="$skipped $suite"
+            skipped_missing="$skipped_missing $suite"
         fi
-    done
+    done < "$DEFAULT_SUITE_FILE"
 
-    if [ -n "$skipped" ]; then
-        echo "[ltp-run-musl] skipping missing runtest suites:$skipped" >&2
+    if [ "$requested_specified" -eq 1 ]; then
+        for suite in $requested_list; do
+            [ -n "$suite" ] || continue
+            if ! default_suite_exists "$suite"; then
+                unknown_requested="$unknown_requested $suite"
+            fi
+        done
     fi
-    if [ -z "$suites" ]; then
+
+    if [ -n "$unknown_requested" ]; then
+        echo "[ltp-run-musl] ignoring suites not in scenario_groups/default:$unknown_requested" >&2
+    fi
+    if [ -n "$skipped_requested" ]; then
+        echo "[ltp-run-musl] skipping requested suites:$skipped_requested" >&2
+    fi
+    if [ -n "$skipped_missing" ]; then
+        echo "[ltp-run-musl] skipping missing runtest suites:$skipped_missing" >&2
+    fi
+    if [ -z "$selected" ]; then
         echo "[ltp-run-musl] no runnable LTP suites found" >&2
         exit 2
     fi
 
-    printf '%s\n' "$suites"
+    printf '%s\n' "$selected"
 }
 
 run_with_runltp() {
     set +e
-    ./runltp -f "$LTP_SUITES"
+    ./runltp -f "$LTP_SELECTED_SUITES"
     ret=$?
     set -e
     return "$ret"
@@ -57,7 +110,6 @@ run_serial() {
     local tmp
     local alltests
     local suite
-    local line
     local tag
     local cmd
     local ret
@@ -72,12 +124,13 @@ run_serial() {
     alltests="$tmp/alltests"
     : > "$alltests"
 
-    for suite in $(printf '%s\n' "$LTP_SUITES" | tr ',' ' '); do
+    for suite in $(printf '%s\n' "$LTP_SELECTED_SUITES" | tr ',' ' '); do
         cat "$LTPROOT/runtest/$suite" >> "$alltests"
     done
 
     printf 'y\n' | "$LTPROOT/IDcheck.sh" || true
 
+    local line
     while IFS= read -r line; do
         case "$line" in
             ''|\#*) continue ;;
@@ -102,26 +155,26 @@ run_serial() {
         case "$ret" in
             0)
                 passed=$((passed + 1))
+                echo "PASS LTP CASE $tag"
                 ;;
             32)
                 skipped=$((skipped + 1))
+                echo "SKIP LTP CASE $tag"
                 ;;
             *)
                 failed=$((failed + 1))
+                echo "FAIL LTP CASE $tag : $ret"
                 ;;
         esac
-        echo "FAIL LTP CASE $tag : $ret"
         echo
     done < "$alltests"
 
     rm -rf "$tmp"
+    echo "[ltp-run-musl] total=$total passed=$passed skipped=$skipped failed=$failed"
     [ "$failed" -eq 0 ]
 }
 
-if [ -z "${LTP_SUITES:-}" ]; then
-    LTP_SUITES=$(tr '\n' ',' < "$LTPROOT/scenario_groups/default" | sed 's/,$//')
-fi
-LTP_SUITES=$(filter_existing_suites "$LTP_SUITES")
+LTP_SELECTED_SUITES=$(select_existing_suites)
 
 set +e
 case "$LTP_RUNNER" in

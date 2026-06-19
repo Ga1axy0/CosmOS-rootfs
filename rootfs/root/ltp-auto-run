@@ -59,6 +59,44 @@ pick_bases() {
     esac
 }
 
+ltp_runner_for_base() {
+    case "$1" in
+        /mnt/musl) printf '%s\n' /root/ltp-run-musl ;;
+        /mnt/glibc) printf '%s\n' /root/ltp-run-glibc ;;
+        *)
+            echo "[ltp-auto-run] invalid LTP base=$1" >&2
+            return 1
+            ;;
+    esac
+}
+
+run_ltp_phase() {
+    local base=$1
+    local suites=${2:-}
+    local skip_suites=${3:-}
+    local runner
+
+    runner=$(ltp_runner_for_base "$base")
+    echo "[ltp-auto-run] running $runner suites=${suites:-default} skip=${skip_suites:-none}"
+    (
+        LTP_SUITES="$suites" LTP_SKIP_SUITES="$skip_suites" /bin/bash "$runner"
+    )
+}
+
+run_ltp_sequence() {
+    local base
+
+    for base in $(pick_bases); do
+        run_ltp_phase "$base" "fs_bind" ""
+    done
+    for base in $(pick_bases); do
+        run_ltp_phase "$base" "syscalls" ""
+    done
+    for base in $(pick_bases); do
+        run_ltp_phase "$base" "" "fs_bind,syscalls"
+    done
+}
+
 # 按脚本短名补齐实际测试脚本文件名。
 normalize_script_name() {
     local name=$1
@@ -95,25 +133,9 @@ run_one_script() {
     local base=$1
     local script=$2
     local path="$base/$script"
-    local group
     local runner
-    local ret
 
     (
-        if [ "$script" = "ltp_testcode.sh" ]; then
-            case "$base" in
-                /mnt/musl) group=ltp-musl; runner=/root/ltp-run-musl ;;
-                /mnt/glibc) group=ltp-glibc; runner=/root/ltp-run-glibc ;;
-            esac
-            echo "[ltp-auto-run] running $runner"
-            echo "#### OS COMP TEST GROUP START $group ####"
-            set +e
-            /bin/bash "$runner"
-            ret=$?
-            set -e
-            echo "#### OS COMP TEST GROUP END ####"
-            exit "$ret"
-        fi
         if [ "$script" = "netperf_testcode.sh" ]; then
             case "$base" in
                 /mnt/musl) runner=/root/netperf-run-musl ;;
@@ -142,10 +164,24 @@ run_ordered_scripts() {
     local item
     local script
     local base
+    local ret
 
     for item in $order; do
         script=$(normalize_script_name "$item")
         if ! script_selected "$script"; then
+            continue
+        fi
+        if [ "$script" = "ltp_testcode.sh" ]; then
+            echo "[ltp-auto-run] running ltp sequence"
+            echo "#### OS COMP TEST GROUP START ltp ####"
+            set +e
+            run_ltp_sequence
+            ret=$?
+            set -e
+            echo "#### OS COMP TEST GROUP END ####"
+            if [ "$ret" -ne 0 ]; then
+                return "$ret"
+            fi
             continue
         fi
         for base in $(pick_bases); do
