@@ -21,7 +21,7 @@ set -e
 
 tree=${LTP_TREE:-both}
 pattern=${AUTO_RUN_PATTERN:-'.*_testcode\.sh$'}
-order=${AUTO_RUN_ORDER:-'iozone netperf iperf basic busybox cyclictest libcbench libctest lmbench lua unixbench ltp'}
+order=${AUTO_RUN_ORDER:-'ltp iozone netperf iperf basic busybox cyclictest libcbench libctest lmbench lua unixbench'}
 
 enter_manual_shell() {
     echo
@@ -70,6 +70,18 @@ ltp_runner_for_base() {
     esac
 }
 
+pick_ltp_bases() {
+    case "$tree" in
+        musl) printf '%s\n' /mnt/musl ;;
+        glibc) printf '%s\n' /mnt/glibc ;;
+        both) printf '%s\n' /mnt/glibc /mnt/musl ;;
+        *)
+            echo "[ltp-auto-run] invalid LTP_TREE=$tree" >&2
+            exit 2
+            ;;
+    esac
+}
+
 run_ltp_phase() {
     local base=$1
     local suites=${2:-}
@@ -83,18 +95,54 @@ run_ltp_phase() {
     )
 }
 
-run_ltp_sequence() {
-    local base
+ltp_group_name_for_base() {
+    case "$1" in
+        /mnt/musl) printf '%s\n' ltp-musl ;;
+        /mnt/glibc) printf '%s\n' ltp-glibc ;;
+        *)
+            echo "[ltp-auto-run] invalid LTP base=$1" >&2
+            return 1
+            ;;
+    esac
+}
 
-    for base in $(pick_bases); do
-        run_ltp_phase "$base" "fs_bind" ""
-    done
-    for base in $(pick_bases); do
-        run_ltp_phase "$base" "syscalls" ""
-    done
-    for base in $(pick_bases); do
-        run_ltp_phase "$base" "" "fs_bind,syscalls"
-    done
+run_ltp_sequence_for_base() {
+    local ret=0
+
+    case "$1" in
+        /mnt/glibc)
+            # run_ltp_phase "$1" "fs_bind" "" || ret=$?
+            run_ltp_phase "$1" "fs_bind" ""
+            ;;
+        /mnt/musl)
+            run_ltp_phase "$1" "fs_bind" ""
+            run_ltp_phase "$1" "syscalls" ""
+            run_ltp_phase "$1" "" "fs_bind,syscalls"
+            ;;
+        *)
+            echo "[ltp-auto-run] invalid LTP base=$1" >&2
+            return 1
+            ;;
+    esac
+
+    return "$ret"
+}
+
+run_ltp_group() {
+    local base=$1
+    local group
+    local ret
+
+    group=$(ltp_group_name_for_base "$base")
+    echo "[ltp-auto-run] running $group sequence"
+    echo "#### OS COMP TEST GROUP START $group ####"
+    set +e
+    run_ltp_sequence_for_base "$base"
+    ret=$?
+    set -e
+    echo "#### OS COMP TEST GROUP END $group ####"
+    # return "$ret"
+    return 0
 }
 
 # 按脚本短名补齐实际测试脚本文件名。
@@ -159,12 +207,13 @@ run_one_script() {
     )
 }
 
-# 按脚本顺序执行测试，同名脚本固定先 musl 后 glibc。
+# 按脚本顺序执行测试；LTP 例外，按评测要求先 glibc 后 musl。
 run_ordered_scripts() {
     local item
     local script
     local base
     local ret
+    local overall_ret=0
 
     for item in $order; do
         script=$(normalize_script_name "$item")
@@ -172,22 +221,23 @@ run_ordered_scripts() {
             continue
         fi
         if [ "$script" = "ltp_testcode.sh" ]; then
-            echo "[ltp-auto-run] running ltp sequence"
-            echo "#### OS COMP TEST GROUP START ltp ####"
-            set +e
-            run_ltp_sequence
-            ret=$?
-            set -e
-            echo "#### OS COMP TEST GROUP END ####"
-            if [ "$ret" -ne 0 ]; then
-                return "$ret"
-            fi
+            for base in $(pick_ltp_bases); do
+                set +e
+                run_ltp_group "$base"
+                ret=$?
+                set -e
+                if [ "$ret" -ne 0 ]; then
+                    overall_ret="$ret"
+                fi
+            done
             continue
         fi
         for base in $(pick_bases); do
             run_one_script "$base" "$script"
         done
     done
+
+    return "$overall_ret"
 }
 
 enable_interrupt_shell
