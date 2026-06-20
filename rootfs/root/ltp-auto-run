@@ -21,7 +21,7 @@ set -e
 
 tree=${LTP_TREE:-both}
 pattern=${AUTO_RUN_PATTERN:-'.*_testcode\.sh$'}
-order=${AUTO_RUN_ORDER:-'ltp iozone netperf iperf basic busybox cyclictest libcbench libctest lmbench lua unixbench'}
+order=${AUTO_RUN_ORDER:-'iozone netperf iperf basic busybox cyclictest libcbench libctest lmbench lua unixbench ltp'}
 
 enter_manual_shell() {
     echo

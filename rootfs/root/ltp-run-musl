@@ -152,20 +152,8 @@ run_serial() {
         ret=$?
         set -e
 
-        case "$ret" in
-            0)
-                passed=$((passed + 1))
-                echo "PASS LTP CASE $tag"
-                ;;
-            32)
-                skipped=$((skipped + 1))
-                echo "SKIP LTP CASE $tag"
-                ;;
-            *)
-                failed=$((failed + 1))
-                echo "FAIL LTP CASE $tag : $ret"
-                ;;
-        esac
+        failed=$((failed + 1))
+        echo "FAIL LTP CASE $tag : $ret"
         echo
     done < "$alltests"
 
