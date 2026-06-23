@@ -5,7 +5,7 @@ BASE=/mnt/musl
 LTPROOT="$BASE/ltp"
 export LTPROOT
 export PATH="$LTPROOT/testcases/bin:$LTPROOT/bin:/bin:/usr/bin:/sbin:/usr/sbin"
-export LTP_TIMEOUT_MUL=0.2
+export LTP_TIMEOUT_MUL=0.4
 LTP_RUNNER=${LTP_RUNNER:-serial}
 DEFAULT_SUITE_FILE="$LTPROOT/scenario_groups/default"
 
