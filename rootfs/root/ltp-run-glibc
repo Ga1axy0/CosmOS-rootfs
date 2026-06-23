@@ -5,6 +5,7 @@ BASE=/mnt/glibc
 LTPROOT="$BASE/ltp"
 export LTPROOT
 export PATH="$LTPROOT/testcases/bin:$LTPROOT/bin:/bin:/usr/bin:/sbin:/usr/sbin"
+export LTP_TIMEOUT_MUL=0.2
 LTP_RUNNER=${LTP_RUNNER:-serial}
 DEFAULT_SUITE_FILE="$LTPROOT/scenario_groups/default"
 
@@ -31,6 +32,18 @@ list_contains() {
 
 default_suite_exists() {
     grep -Fxq -- "$1" "$DEFAULT_SUITE_FILE"
+}
+
+has_custom_testpoints() {
+    [ -n "${LTP_TESTPOINTS:-}" ]
+}
+
+create_custom_testpoints_file() {
+    local custom_file
+
+    custom_file=$(mktemp "$LTPROOT/runtest/ltp-custom.XXXXXX")
+    printf '%s' "$LTP_TESTPOINTS" > "$custom_file"
+    printf '%s\n' "$custom_file"
 }
 
 select_existing_suites() {
@@ -99,6 +112,17 @@ select_existing_suites() {
 }
 
 run_with_runltp() {
+    local custom_file=
+    if has_custom_testpoints; then
+        custom_file=$(create_custom_testpoints_file)
+        echo "[ltp-run-glibc] using custom testpoints from LTP_TESTPOINTS; ignoring LTP_SUITES/LTP_SKIP_SUITES" >&2
+        set +e
+        ./runltp -f "$(basename "$custom_file")"
+        ret=$?
+        set -e
+        rm -f "$custom_file"
+        return "$ret"
+    fi
     set +e
     ./runltp -f "$LTP_SELECTED_SUITES"
     ret=$?
@@ -109,6 +133,7 @@ run_with_runltp() {
 run_serial() {
     local tmp
     local alltests
+    local custom_file=
     local suite
     local tag
     local cmd
@@ -121,12 +146,18 @@ run_serial() {
     mkdir -p "$LTPROOT/output" "$LTPROOT/results" /tmp
     tmp=$(mktemp -d /tmp/ltp-serial.XXXXXX)
     chmod 777 "$tmp"
-    alltests="$tmp/alltests"
-    : > "$alltests"
+    if has_custom_testpoints; then
+        custom_file=$(create_custom_testpoints_file)
+        alltests="$custom_file"
+        echo "[ltp-run-glibc] using custom testpoints from LTP_TESTPOINTS; ignoring LTP_SUITES/LTP_SKIP_SUITES" >&2
+    else
+        alltests="$tmp/alltests"
+        : > "$alltests"
 
-    for suite in $(printf '%s\n' "$LTP_SELECTED_SUITES" | tr ',' ' '); do
-        cat "$LTPROOT/runtest/$suite" >> "$alltests"
-    done
+        for suite in $(printf '%s\n' "$LTP_SELECTED_SUITES" | tr ',' ' '); do
+            cat "$LTPROOT/runtest/$suite" >> "$alltests"
+        done
+    fi
 
     printf 'y\n' | "$LTPROOT/IDcheck.sh" || true
 
@@ -158,12 +189,19 @@ run_serial() {
     done < "$alltests"
 
     rm -rf "$tmp"
+    if [ -n "$custom_file" ]; then
+        rm -f "$custom_file"
+    fi
     echo "[ltp-run-glibc] total=$total passed=$passed skipped=$skipped failed=$failed"
     # [ "$failed" -eq 0 ]
     return 0
 }
 
-LTP_SELECTED_SUITES=$(select_existing_suites)
+if has_custom_testpoints; then
+    LTP_SELECTED_SUITES=
+else
+    LTP_SELECTED_SUITES=$(select_existing_suites)
+fi
 
 set +e
 case "$LTP_RUNNER" in

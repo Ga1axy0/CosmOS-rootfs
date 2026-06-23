@@ -86,13 +86,24 @@ run_ltp_phase() {
     local base=$1
     local suites=${2:-}
     local skip_suites=${3:-}
+    local testpoints=${4:-}
     local runner
 
     runner=$(ltp_runner_for_base "$base")
-    echo "[ltp-auto-run] running $runner suites=${suites:-default} skip=${skip_suites:-none}"
-    (
-        LTP_SUITES="$suites" LTP_SKIP_SUITES="$skip_suites" /bin/bash "$runner"
-    )
+    if [ -n "$testpoints" ]; then
+        echo "[ltp-auto-run] running $runner custom testpoints"
+        (
+            unset LTP_SUITES
+            unset LTP_SKIP_SUITES
+            LTP_TESTPOINTS="$testpoints" /bin/bash "$runner"
+        )
+    else
+        echo "[ltp-auto-run] running $runner suites=${suites:-default} skip=${skip_suites:-none}"
+        (
+            unset LTP_TESTPOINTS
+            LTP_SUITES="$suites" LTP_SKIP_SUITES="$skip_suites" /bin/bash "$runner"
+        )
+    fi
 }
 
 ltp_group_name_for_base() {
@@ -108,10 +119,16 @@ ltp_group_name_for_base() {
 
 run_ltp_sequence_for_base() {
     local ret=0
+    local syscalls_subset=
 
     case "$1" in
         /mnt/glibc)
-            # run_ltp_phase "$1" "fs_bind" "" || ret=$?
+            syscalls_subset=$(sed -n '1,166p; 211p; 247p; 248p; 372, 376p; 480p; 543p; 784p; 972p; 1479,1481p; 1520p; 1714p' /mnt/glibc/ltp/runtest/syscalls)
+            if [ -z "$syscalls_subset" ]; then
+                echo "[ltp-auto-run] empty syscalls_subset from /mnt/glibc/ltp/runtest/syscalls" >&2
+                return 1
+            fi
+            run_ltp_phase "$1" "" "" "$syscalls_subset"
             run_ltp_phase "$1" "fs_bind" ""
             ;;
         /mnt/musl)
