@@ -119,22 +119,18 @@ ltp_group_name_for_base() {
 
 run_ltp_sequence_for_base() {
     local ret=0
+    local syscalls_file="$1/ltp/runtest/syscalls"
     local syscalls_subset=
 
     case "$1" in
-        /mnt/glibc)
-            syscalls_subset=$(sed -n '1,132p; 211p; 247p; 248p; 372, 376p; 480p; 543p; 784p; 972p; 1479,1481p; 1520p; 1714p' /mnt/glibc/ltp/runtest/syscalls)
+        /mnt/glibc|/mnt/musl)
+            syscalls_subset=$(sed -n '1,132p; 211p; 247p; 248p; 372, 376p; 480p; 543p; 784p; 972p; 1479,1481p; 1520p; 1714p' "$syscalls_file")
             if [ -z "$syscalls_subset" ]; then
-                echo "[ltp-auto-run] empty syscalls_subset from /mnt/glibc/ltp/runtest/syscalls" >&2
+                echo "[ltp-auto-run] empty syscalls_subset from $syscalls_file" >&2
                 return 1
             fi
             run_ltp_phase "$1" "" "" "$syscalls_subset"
             run_ltp_phase "$1" "fs_bind" ""
-            ;;
-        /mnt/musl)
-            run_ltp_phase "$1" "fs_bind" ""
-            run_ltp_phase "$1" "syscalls" ""
-            run_ltp_phase "$1" "" "fs_bind,syscalls"
             ;;
         *)
             echo "[ltp-auto-run] invalid LTP base=$1" >&2
