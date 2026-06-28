@@ -121,9 +121,10 @@ run_ltp_sequence_for_base() {
     local ret=0
     local syscalls_file="$1/ltp/runtest/syscalls"
     local syscalls_subset=
+    local syscalls_complement=
 
     case "$1" in
-        /mnt/glibc|/mnt/musl)
+        /mnt/glibc)
             syscalls_subset=$(sed -n '1,132p; 211p; 247p; 248p; 372, 376p; 480p; 543p; 784p; 972p; 1479,1481p; 1520p; 1714p' "$syscalls_file")
             if [ -z "$syscalls_subset" ]; then
                 echo "[ltp-auto-run] empty syscalls_subset from $syscalls_file" >&2
@@ -131,6 +132,21 @@ run_ltp_sequence_for_base() {
             fi
             run_ltp_phase "$1" "" "" "$syscalls_subset"
             run_ltp_phase "$1" "fs_bind" ""
+            ;;
+        /mnt/musl)
+            syscalls_subset=$(sed -n '1,132p; 211p; 247p; 248p; 372, 376p; 480p; 543p; 784p; 972p; 1479,1481p; 1520p; 1714p' "$syscalls_file")
+            if [ -z "$syscalls_subset" ]; then
+                echo "[ltp-auto-run] empty syscalls_subset from $syscalls_file" >&2
+                return 1
+            fi
+            run_ltp_phase "$1" "" "" "$syscalls_subset"
+            run_ltp_phase "$1" "fs_bind" ""
+            syscalls_complement=$(sed -e '168,189d' -e '1,132d' -e '211d' -e '247d' -e '248d' -e '372,376d' -e '480d' -e '543d' -e '784d' -e '972d' -e '1479,1481d' -e '1520d' -e '1714d' "$syscalls_file")
+            if [ -z "$syscalls_complement" ]; then
+                echo "[ltp-auto-run] empty syscalls_complement from $syscalls_file" >&2
+                return 1
+            fi
+            run_ltp_phase "$1" "" "" "$syscalls_complement"
             ;;
         *)
             echo "[ltp-auto-run] invalid LTP base=$1" >&2
