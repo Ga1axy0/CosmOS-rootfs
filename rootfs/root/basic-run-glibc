@@ -1,0 +1,49 @@
+tests=(
+    brk
+    chdir
+    clone
+    close
+    dup2
+    dup
+    execve
+    exit
+    fork
+    fstat
+    getcwd
+    getdents
+    getpid
+    getppid
+    gettimeofday
+    mkdir_
+    mmap
+    "mount /dev/loop0"
+    munmap
+    openat
+    open
+    pipe
+    read
+    sleep
+    times
+    "umount /dev/loop0"
+    uname
+    unlink
+    wait
+    waitpid
+    write
+    yield
+)
+
+BASE=/mnt/glibc/basic
+
+cd "$BASE"
+
+./busybox echo "#### OS COMP TEST GROUP START basic-glibc ####"
+
+for i in "${tests[@]}"
+do
+        echo "Testing $i :"
+        ./$i
+done
+
+cd ..
+./busybox echo "#### OS COMP TEST GROUP END basic-glibc ####"

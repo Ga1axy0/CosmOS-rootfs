@@ -229,6 +229,14 @@ run_one_script() {
             echo "[ltp-auto-run] running $runner"
             exec /bin/bash "$runner"
         fi
+        if [ "$script" = "basic_testcode.sh" ]; then
+            case "$base" in
+                /mnt/musl) runner=/root/basic-run-musl ;;
+                /mnt/glibc) runner=/root/basic-run-glibc ;;
+            esac
+            echo "[ltp-auto-run] running $runner"
+            exec /bin/bash "$runner"
+        fi
         [ -f "$path" ] || return 0
         echo "[ltp-auto-run] running $path"
         cd "$base"
@@ -243,6 +251,8 @@ run_ordered_scripts() {
     local base
     local ret
     local overall_ret=0
+
+    ./loopset loop-fat32.img
 
     for item in $order; do
         script=$(normalize_script_name "$item")
