@@ -35,9 +35,9 @@ tests=(
 
 BASE=/mnt/musl/basic
 
+./loopset loop-fat32.img
 echo "#### OS COMP TEST GROUP START basic-musl ####"
 
-./loopset loop-fat32.img
 
 cd "$BASE"
 
@@ -50,6 +50,7 @@ done
 
 cd ..
 
-./loopset --clear
-
 ./busybox echo "#### OS COMP TEST GROUP END basic-musl ####"
+
+cd /root
+./loopset --clear
