@@ -35,11 +35,12 @@ tests=(
 
 BASE=/mnt/glibc/basic
 
-cd "$BASE"
-
 ./busybox echo "#### OS COMP TEST GROUP START basic-glibc ####"
 
 ./loopset loop-fat32.img
+
+cd "$BASE"
+
 
 for i in "${tests[@]}"
 do
