@@ -252,8 +252,6 @@ run_ordered_scripts() {
     local ret
     local overall_ret=0
 
-    ./loopset loop-fat32.img
-
     for item in $order; do
         script=$(normalize_script_name "$item")
         if ! script_selected "$script"; then

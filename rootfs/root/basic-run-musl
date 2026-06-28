@@ -39,6 +39,8 @@ cd "$BASE"
 
 ./busybox echo "#### OS COMP TEST GROUP START basic-musl ####"
 
+./loopset loop-fat32.img
+
 for i in "${tests[@]}"
 do
         echo "Testing $i :"
@@ -46,4 +48,7 @@ do
 done
 
 cd ..
+
+./loopset --clear
+
 ./busybox echo "#### OS COMP TEST GROUP END basic-musl ####"
