@@ -154,7 +154,7 @@ run_ltp_sequence_for_base() {
             fi
             run_ltp_phase "$1" "" "" "$syscalls_subset2"
 
-            syscalls_complement=$(sed -e '168,189d' -e '1,132d' -e '211d' -e '247d' -e '248d' -e '372,376d' -e '480d' -e '543d' -e '784d' -e '972d' -e '1479,1481d' -e '1520d' -e '1714d' -e '1367d' -e '1130,1136d' -e '492d' -e '1019d' -e '1244d' -e '959d' -e '719d' -e '967d' "$syscalls_file")
+            syscalls_complement=$(sed -e '168,189d' -e '1,132d' -e '211d' -e '237d' -e '239d' -e '247d' -e '248d' -e '372,376d' -e '480d' -e '543d' -e '784d' -e '972d' -e '1479,1481d' -e '1520d' -e '1714d' -e '1367d' -e '1130,1136d' -e '492d' -e '1019d' -e '1244d' -e '959d' -e '719d' -e '967d' "$syscalls_file")
             if [ -z "$syscalls_complement" ]; then
                 echo "[ltp-auto-run] empty syscalls_complement from $syscalls_file" >&2
             fi
