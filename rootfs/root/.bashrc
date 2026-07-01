@@ -3,6 +3,7 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/root:/mnt/musl:/mnt/glibc:/mnt/musl/l
 export PS1='root@CosmOS:\w# '
 alias ll='ls -l'
 alias la='ls -la'
+alias l='ls'
 
 if [ "${TERM}" != "dumb" ]; then
     alias ls='ls --color=auto'

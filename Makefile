@@ -26,6 +26,7 @@ LA_GLIBC_TOOLCHAIN ?= /opt/gcc-13.2.0-loongarch64-linux-gnu
 LA_MUSL_LIB ?= /opt/loongarch64-linux-musl-cross/loongarch64-linux-musl/lib
 LA_MUSL_ARCH ?= loongarch64
 COMMON_LDFLAGS ?= -static
+WITH_VIM ?= 0
 
 export TARGET
 export CROSS_PREFIX
@@ -46,8 +47,17 @@ export MUSL_ARCH
 PRIORITY_SCRIPT := $(SCRIPTS_DIR)/build-busybox.sh
 ACCOUNT_SCRIPT := $(SCRIPTS_DIR)/build-shadow.sh
 HELPER_SCRIPTS := $(COMMON_SCRIPT)
-OTHER_SCRIPTS := $(filter-out $(PRIORITY_SCRIPT) $(ACCOUNT_SCRIPT) $(HELPER_SCRIPTS),$(sort $(wildcard $(SCRIPTS_DIR)/*.sh)))
-SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(OTHER_SCRIPTS) $(if $(wildcard $(ACCOUNT_SCRIPT)),$(ACCOUNT_SCRIPT))
+OPTIONAL_SCRIPT_NAMES := build-ncurses build-vim
+OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(OPTIONAL_SCRIPT_NAMES)))
+PACKAGE_SCRIPTS := $(filter-out $(PRIORITY_SCRIPT) $(ACCOUNT_SCRIPT) $(HELPER_SCRIPTS),$(sort $(wildcard $(SCRIPTS_DIR)/*.sh)))
+REQUIRED_SCRIPTS := $(filter-out $(OPTIONAL_SCRIPTS),$(PACKAGE_SCRIPTS))
+ENABLED_OPTIONAL_SCRIPT_NAMES :=
+ifneq ($(filter 1 yes true on,$(WITH_VIM)),)
+ENABLED_OPTIONAL_SCRIPT_NAMES += build-ncurses build-vim
+endif
+ROOTFS_INIT_OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(ENABLED_OPTIONAL_SCRIPT_NAMES)))
+ROOTFS_INIT_SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(REQUIRED_SCRIPTS) $(ROOTFS_INIT_OPTIONAL_SCRIPTS) $(if $(wildcard $(ACCOUNT_SCRIPT)),$(ACCOUNT_SCRIPT))
+SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(REQUIRED_SCRIPTS) $(OPTIONAL_SCRIPTS) $(if $(wildcard $(ACCOUNT_SCRIPT)),$(ACCOUNT_SCRIPT))
 SCRIPT_NAMES := $(basename $(notdir $(SCRIPTS)))
 SCRIPT_RV_TARGETS := $(addsuffix -rv,$(SCRIPT_NAMES))
 SCRIPT_LA_TARGETS := $(addsuffix -la,$(SCRIPT_NAMES))
@@ -69,7 +79,7 @@ prepare-rootfs:
 
 rootfs-init: prepare-rootfs
 	@mkdir -p "$(STAMP_DIR)"
-	@for script in $(SCRIPTS); do \
+	@for script in $(ROOTFS_INIT_SCRIPTS); do \
 		name="$$(basename "$$script" .sh)"; \
 		stamp="$(STAMP_DIR)/$$name.stamp"; \
 		if [[ -f "$$stamp" && "$$stamp" -nt "$$script" && "$$stamp" -nt "$(COMMON_SCRIPT)" ]]; then \
@@ -139,7 +149,9 @@ clean:
 
 help:
 	@echo "Targets:"
-	@echo "  make rootfs-init   Run all scripts in scripts/ once, tracked by build stamps"
+	@echo "  make rootfs-init   Run the default script set once, tracked by build stamps"
+	@echo "                     Optional packages:"
+	@echo "                       WITH_VIM=1 enables build-ncurses + build-vim"
 	@echo "  make <script>      Build one package into rootfs-rv and rootfs-la"
 	@echo "  make <script>-rv   Build one package into rootfs-rv only"
 	@echo "  make <script>-la   Build one package into rootfs-la only"
