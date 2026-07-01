@@ -26,7 +26,10 @@ LA_GLIBC_TOOLCHAIN ?= /opt/gcc-13.2.0-loongarch64-linux-gnu
 LA_MUSL_LIB ?= /opt/loongarch64-linux-musl-cross/loongarch64-linux-musl/lib
 LA_MUSL_ARCH ?= loongarch64
 COMMON_LDFLAGS ?= -static
-WITH_VIM ?= 0
+
+WITH_VIM ?= 1
+WITH_BUILD_ESSENTIAL ?= 1
+WITH_NATIVE_GCC ?= 1
 
 export TARGET
 export CROSS_PREFIX
@@ -47,15 +50,21 @@ export MUSL_ARCH
 PRIORITY_SCRIPT := $(SCRIPTS_DIR)/build-busybox.sh
 ACCOUNT_SCRIPT := $(SCRIPTS_DIR)/build-shadow.sh
 HELPER_SCRIPTS := $(COMMON_SCRIPT)
-OPTIONAL_SCRIPT_NAMES := build-ncurses build-vim
+OPTIONAL_SCRIPT_NAMES := build-musl-dev build-gcc-native build-ncurses build-vim
 OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(OPTIONAL_SCRIPT_NAMES)))
 PACKAGE_SCRIPTS := $(filter-out $(PRIORITY_SCRIPT) $(ACCOUNT_SCRIPT) $(HELPER_SCRIPTS),$(sort $(wildcard $(SCRIPTS_DIR)/*.sh)))
 REQUIRED_SCRIPTS := $(filter-out $(OPTIONAL_SCRIPTS),$(PACKAGE_SCRIPTS))
 ENABLED_OPTIONAL_SCRIPT_NAMES :=
+ifneq ($(filter 1 yes true on,$(WITH_BUILD_ESSENTIAL)),)
+ENABLED_OPTIONAL_SCRIPT_NAMES += build-musl-dev
+endif
+ifneq ($(filter 1 yes true on,$(WITH_NATIVE_GCC)),)
+ENABLED_OPTIONAL_SCRIPT_NAMES += build-musl-dev build-gcc-native
+endif
 ifneq ($(filter 1 yes true on,$(WITH_VIM)),)
 ENABLED_OPTIONAL_SCRIPT_NAMES += build-ncurses build-vim
 endif
-ROOTFS_INIT_OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(ENABLED_OPTIONAL_SCRIPT_NAMES)))
+ROOTFS_INIT_OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(sort $(ENABLED_OPTIONAL_SCRIPT_NAMES))))
 ROOTFS_INIT_SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(REQUIRED_SCRIPTS) $(ROOTFS_INIT_OPTIONAL_SCRIPTS) $(if $(wildcard $(ACCOUNT_SCRIPT)),$(ACCOUNT_SCRIPT))
 SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(REQUIRED_SCRIPTS) $(OPTIONAL_SCRIPTS) $(if $(wildcard $(ACCOUNT_SCRIPT)),$(ACCOUNT_SCRIPT))
 SCRIPT_NAMES := $(basename $(notdir $(SCRIPTS)))
@@ -151,7 +160,12 @@ help:
 	@echo "Targets:"
 	@echo "  make rootfs-init   Run the default script set once, tracked by build stamps"
 	@echo "                     Optional packages:"
+	@echo "                       WITH_BUILD_ESSENTIAL=1 enables libc/libstdc++ headers and dev libs"
+	@echo "                       WITH_NATIVE_GCC=1 enables build-musl-dev + build-gcc-native"
+	@echo "                         native gcc also needs GCC prerequisite tarballs (gmp/mpfr/mpc)"
 	@echo "                       WITH_VIM=1 enables build-ncurses + build-vim"
+	@echo "                     Manual targets:"
+	@echo "                       make build-gcc-native-{rv,la} builds native gcc/g++ when prerequisites are ready"
 	@echo "  make <script>      Build one package into rootfs-rv and rootfs-la"
 	@echo "  make <script>-rv   Build one package into rootfs-rv only"
 	@echo "  make <script>-la   Build one package into rootfs-la only"

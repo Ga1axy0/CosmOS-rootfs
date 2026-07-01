@@ -82,3 +82,68 @@ log_musl_toolchain() {
     echo "[INFO] CFLAGS       : ${CFLAGS:-}"
     echo "[INFO] LDFLAGS      : ${LDFLAGS:-}"
 }
+
+resolve_toolchain_root() {
+    if [ -n "${TOOLCHAIN_ROOT:-}" ]; then
+        printf '%s\n' "$TOOLCHAIN_ROOT"
+        return 0
+    fi
+
+    printf '%s\n' "$(cd "${TOOLCHAIN_BIN}/.." && pwd)"
+}
+
+resolve_musl_sysroot() {
+    local toolchain_root
+
+    if [ -n "${MUSL_SYSROOT:-}" ]; then
+        printf '%s\n' "$MUSL_SYSROOT"
+        return 0
+    fi
+
+    toolchain_root="$(resolve_toolchain_root)"
+    printf '%s\n' "$toolchain_root/$TARGET"
+}
+
+resolve_gcc_base_dir() {
+    local toolchain_root
+
+    toolchain_root="$(resolve_toolchain_root)"
+    printf '%s\n' "$toolchain_root/lib/gcc/$TARGET"
+}
+
+resolve_gcc_version() {
+    local gcc_base
+    local version_dir
+
+    if [ -n "${GCC_VERSION:-}" ]; then
+        printf '%s\n' "$GCC_VERSION"
+        return 0
+    fi
+
+    gcc_base="$(resolve_gcc_base_dir)"
+    if [ ! -d "$gcc_base" ]; then
+        echo "[ERROR] 找不到 gcc 版本目录: $gcc_base" >&2
+        return 1
+    fi
+
+    version_dir="$(
+        find "$gcc_base" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
+            | sort \
+            | tail -n 1
+    )"
+    if [ -z "$version_dir" ]; then
+        echo "[ERROR] gcc 版本目录为空: $gcc_base" >&2
+        return 1
+    fi
+
+    basename "$version_dir"
+}
+
+resolve_gcc_libdir() {
+    local gcc_base
+    local gcc_version
+
+    gcc_base="$(resolve_gcc_base_dir)"
+    gcc_version="$(resolve_gcc_version)"
+    printf '%s\n' "$gcc_base/$gcc_version"
+}
