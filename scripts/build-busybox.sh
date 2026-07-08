@@ -76,6 +76,10 @@ make defconfig
 # musl 静态自举 busybox
 enable_config CONFIG_STATIC
 disable_config CONFIG_PIE
+# 当前 guest rootfs 不提供 openssl，可直接使用 BusyBox 内置 TLS。
+# 若保留 FEATURE_WGET_OPENSSL，wget 会先走 openssl helper 分支，
+# 这会依赖更完整的 vfork/exec 语义；关闭后可稳定落到内置 TLS。
+disable_config CONFIG_FEATURE_WGET_OPENSSL
 
 # BusyBox tc applet 依赖的旧 CBQ UAPI 在新内核头中可能缺失。
 # 这里直接关闭 tc，避免和 iproute2 提供的 tc 重复。
