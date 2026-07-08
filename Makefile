@@ -55,6 +55,7 @@ OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(OPTIONAL_SCRIP
 PACKAGE_SCRIPTS := $(filter-out $(PRIORITY_SCRIPT) $(ACCOUNT_SCRIPT) $(HELPER_SCRIPTS),$(sort $(wildcard $(SCRIPTS_DIR)/*.sh)))
 REQUIRED_SCRIPTS := $(filter-out $(OPTIONAL_SCRIPTS),$(PACKAGE_SCRIPTS))
 ENABLED_OPTIONAL_SCRIPT_NAMES :=
+uniq = $(if $1,$(firstword $1) $(call uniq,$(filter-out $(firstword $1),$1)))
 ifneq ($(filter 1 yes true on,$(WITH_BUILD_ESSENTIAL)),)
 ENABLED_OPTIONAL_SCRIPT_NAMES += build-musl-dev
 endif
@@ -64,7 +65,7 @@ endif
 ifneq ($(filter 1 yes true on,$(WITH_VIM)),)
 ENABLED_OPTIONAL_SCRIPT_NAMES += build-ncurses build-vim
 endif
-ROOTFS_INIT_OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(sort $(ENABLED_OPTIONAL_SCRIPT_NAMES))))
+ROOTFS_INIT_OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(call uniq,$(ENABLED_OPTIONAL_SCRIPT_NAMES))))
 ROOTFS_INIT_SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(REQUIRED_SCRIPTS) $(ROOTFS_INIT_OPTIONAL_SCRIPTS) $(if $(wildcard $(ACCOUNT_SCRIPT)),$(ACCOUNT_SCRIPT))
 SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(REQUIRED_SCRIPTS) $(OPTIONAL_SCRIPTS) $(if $(wildcard $(ACCOUNT_SCRIPT)),$(ACCOUNT_SCRIPT))
 SCRIPT_NAMES := $(basename $(notdir $(SCRIPTS)))

@@ -1,0 +1,4 @@
+GROUP=100
+HOME=/tmp
+SHELL=/bin/sh
+CREATE_MAIL_SPOOL=no
