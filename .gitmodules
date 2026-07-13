@@ -1,0 +1,3 @@
+[submodule "rootfs/root/tgoskits"]
+	path = rootfs/root/tgoskits
+	url = https://github.com/rcore-os/tgoskits.git
