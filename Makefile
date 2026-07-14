@@ -18,6 +18,10 @@ TARGET ?= riscv64-linux-musl
 RV_ROOTFS_TARGET ?= riscv64-linux-musl
 RV_TOOLCHAIN_BIN ?= /opt/riscv64-linux-musl-cross/bin
 RV_GLIBC_LIB ?= /usr/riscv64-linux-gnu/lib
+RV_GLIBC_SYSROOT ?= /usr/riscv64-linux-gnu
+RV_GLIBC_SYSROOT_DIR ?= /opt/riscv64-linux-gnu-sysroot
+RV_GLIBC_HOST_TARGET ?= riscv64gc-unknown-linux-gnu
+RV_GLIBC_HOST_LINKER ?= /usr/bin/riscv64gc-unknown-linux-gnu-ld
 RV_MUSL_LIB ?= /opt/riscv64-linux-musl-cross/riscv64-linux-musl/lib
 RV_MUSL_ARCH ?= riscv64
 LA_ROOTFS_TARGET ?= loongarch64-linux-musl
@@ -30,6 +34,7 @@ COMMON_LDFLAGS ?= -static
 WITH_VIM ?= 1
 WITH_BUILD_ESSENTIAL ?= 1
 WITH_NATIVE_GCC ?= 1
+WITH_GLIBC_HOST_SYSROOT ?= 1
 WITH_RUST ?= 1
 
 export TARGET
@@ -51,7 +56,7 @@ export MUSL_ARCH
 PRIORITY_SCRIPT := $(SCRIPTS_DIR)/build-busybox.sh
 ACCOUNT_SCRIPT := $(SCRIPTS_DIR)/build-shadow.sh
 HELPER_SCRIPTS := $(COMMON_SCRIPT)
-OPTIONAL_SCRIPT_NAMES := build-musl-dev build-gcc-native build-ncurses build-vim build-rust
+OPTIONAL_SCRIPT_NAMES := build-musl-dev build-gcc-native build-ncurses build-vim build-glibc-host-sysroot build-rust
 OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(OPTIONAL_SCRIPT_NAMES)))
 PACKAGE_SCRIPTS := $(filter-out $(PRIORITY_SCRIPT) $(ACCOUNT_SCRIPT) $(HELPER_SCRIPTS),$(sort $(wildcard $(SCRIPTS_DIR)/*.sh)))
 REQUIRED_SCRIPTS := $(filter-out $(OPTIONAL_SCRIPTS),$(PACKAGE_SCRIPTS))
@@ -62,6 +67,9 @@ ENABLED_OPTIONAL_SCRIPT_NAMES += build-musl-dev
 endif
 ifneq ($(filter 1 yes true on,$(WITH_NATIVE_GCC)),)
 ENABLED_OPTIONAL_SCRIPT_NAMES += build-musl-dev build-gcc-native
+endif
+ifneq ($(filter 1 yes true on,$(WITH_GLIBC_HOST_SYSROOT)),)
+ENABLED_OPTIONAL_SCRIPT_NAMES += build-glibc-host-sysroot
 endif
 ifneq ($(filter 1 yes true on,$(WITH_VIM)),)
 ENABLED_OPTIONAL_SCRIPT_NAMES += build-ncurses build-vim
@@ -119,6 +127,10 @@ $(SCRIPT_RV_TARGETS): %-rv:
 		TOOLCHAIN_BIN="$(RV_TOOLCHAIN_BIN)" \
 		BUSYBOX_ARCH=riscv \
 		GLIBC_LIB="$(RV_GLIBC_LIB)" \
+		GLIBC_SYSROOT="$(RV_GLIBC_SYSROOT)" \
+		GLIBC_SYSROOT_DIR="$(RV_GLIBC_SYSROOT_DIR)" \
+		GLIBC_HOST_TARGET="$(RV_GLIBC_HOST_TARGET)" \
+		GLIBC_HOST_LINKER="$(RV_GLIBC_HOST_LINKER)" \
 		MUSL_LIB="$(RV_MUSL_LIB)" \
 		MUSL_ARCH="$(RV_MUSL_ARCH)"
 
@@ -167,6 +179,7 @@ help:
 	@echo "                     Optional packages:"
 	@echo "                       WITH_BUILD_ESSENTIAL=1 enables libc/libstdc++ headers and dev libs"
 	@echo "                       WITH_NATIVE_GCC=1 enables build-musl-dev + build-gcc-native"
+	@echo "                       WITH_GLIBC_HOST_SYSROOT=1 stages the RISC-V glibc host linker sysroot"
 	@echo "                         native gcc also needs GCC prerequisite tarballs (gmp/mpfr/mpc)"
 	@echo "                       WITH_VIM=1 enables build-ncurses + build-vim"
 	@echo "                       WITH_RUST=1 enables fixed RISC-V rustc + cargo + rustdoc"
