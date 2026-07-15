@@ -14,7 +14,7 @@ ROOTFS="${ROOTFS_DIR:-$PROJECT_ROOT/rootfs}"
 GLIBC_SYSROOT="${GLIBC_SYSROOT:-/usr/riscv64-linux-gnu}"
 GLIBC_SYSROOT_DIR="${GLIBC_SYSROOT_DIR:-/opt/riscv64-linux-gnu-sysroot}"
 GLIBC_HOST_TARGET="${GLIBC_HOST_TARGET:-riscv64gc-unknown-linux-gnu}"
-GLIBC_HOST_LINKER="${GLIBC_HOST_LINKER:-/usr/bin/riscv64gc-unknown-linux-gnu-ld}"
+GLIBC_HOST_LINKER="${GLIBC_HOST_LINKER:-/usr/bin/riscv64gc-unknown-linux-gnu-gcc}"
 
 # Only rootfs-rv has the RISC-V Rust host toolchain.  In particular, never
 # install this sysroot into the LoongArch variant copied from the same base.
@@ -31,6 +31,8 @@ die() {
 }
 
 [ -d "$GLIBC_SYSROOT" ] || die "RISC-V glibc sysroot not found: $GLIBC_SYSROOT"
+[ -x "$ROOTFS/usr/bin/gcc" ] || \
+    die "native guest GCC driver not found: $ROOTFS/usr/bin/gcc (enable WITH_NATIVE_GCC=1)"
 
 source_include="$GLIBC_SYSROOT/include"
 source_lib="$GLIBC_SYSROOT/lib"
@@ -93,9 +95,15 @@ if [ ! -e "$guest_sysroot/lib/libgcc_s.so" ] && [ -e "$guest_sysroot/lib/libgcc_
     ln -s libgcc_s.so.1 "$guest_sysroot/lib/libgcc_s.so"
 fi
 
-# rustc invokes a GNU-style linker and may encode linker options as -Wl,a,b.
-# The wrapper normalizes those options before driving the RISC-V rust-lld
-# shipped with the guest Rust toolchain.
+# The built-in riscv64gc-unknown-linux-gnu Rust target has linker flavor
+# `gnu-cc`, so rustc expects a compiler driver rather than a raw `ld`. The
+# driver supplies Scrt1.o/crti.o/crtn.o, GCC's crtbegin/crtend objects, and
+# the glibc PT_INTERP. Calling rust-lld directly produces an ET_DYN file with
+# entry point zero and no interpreter.
+#
+# The native guest GCC defaults to musl, but its specs support `-mglibc`.
+# Point it at the isolated glibc sysroot while retaining GCC's own runtime
+# object directory for crtbegin/crtend and libgcc.
 linker_path="$ROOTFS$GLIBC_HOST_LINKER"
 mkdir -p "$(dirname "$linker_path")"
 cat > "$linker_path" <<EOF
@@ -103,27 +111,11 @@ cat > "$linker_path" <<EOF
 set -e
 
 sysroot="$GLIBC_SYSROOT_DIR"
-args=()
-for arg in "\$@"; do
-    case "\$arg" in
-        -Wl,*)
-            payload="\${arg#-Wl,}"
-            IFS=',' read -r -a linker_args <<< "\$payload"
-            args+=("\${linker_args[@]}")
-            ;;
-        -fuse-ld=*)
-            ;;
-        *)
-            args+=("\$arg")
-            ;;
-    esac
-done
-
-exec /usr/bin/rust-lld -flavor gnu \\
+exec /usr/bin/gcc \\
+    -mglibc \\
     --sysroot="\$sysroot" \\
-    -L"\$sysroot/lib" \\
-    -L"\$sysroot/usr/lib" \\
-    "\${args[@]}"
+    -B"\$sysroot/lib/" \\
+    "\$@"
 EOF
 chmod 0755 "$linker_path"
 
