@@ -106,6 +106,25 @@ fi
 # object directory for crtbegin/crtend and libgcc.
 linker_path="$ROOTFS$GLIBC_HOST_LINKER"
 mkdir -p "$(dirname "$linker_path")"
+
+# The native GCC install keeps its fixed compiler headers outside the search
+# path selected by -mglibc/--sysroot.  glibc's limits.h uses include_next to
+# reach GCC's limits.h, so make that directory explicit in the GNU host
+# wrapper.  Select the version that belongs to the installed cc1 driver rather
+# than a possibly co-installed cross-toolchain runtime.
+gcc_include_fixed=""
+for cc1_path in "$ROOTFS/usr/libexec/gcc/riscv64-linux-musl"/*/cc1; do
+    [ -f "$cc1_path" ] || continue
+    gcc_version="$(basename "$(dirname "$cc1_path")")"
+    candidate="/usr/lib/gcc/riscv64-linux-musl/$gcc_version/include-fixed"
+    if [ -d "$ROOTFS$candidate" ]; then
+        gcc_include_fixed="$candidate"
+        break
+    fi
+done
+[ -n "$gcc_include_fixed" ] || \
+    die "native GCC fixed include directory not found below $ROOTFS/usr/lib/gcc"
+
 cat > "$linker_path" <<EOF
 #!/bin/bash
 set -e
@@ -115,6 +134,7 @@ exec /usr/bin/gcc \\
     -mglibc \\
     --sysroot="\$sysroot" \\
     -B"\$sysroot/lib/" \\
+    -isystem "$gcc_include_fixed" \\
     "\$@"
 EOF
 chmod 0755 "$linker_path"

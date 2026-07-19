@@ -56,7 +56,7 @@ export MUSL_ARCH
 PRIORITY_SCRIPT := $(SCRIPTS_DIR)/build-busybox.sh
 ACCOUNT_SCRIPT := $(SCRIPTS_DIR)/build-shadow.sh
 HELPER_SCRIPTS := $(COMMON_SCRIPT)
-OPTIONAL_SCRIPT_NAMES := build-musl-dev build-gcc-native build-ncurses build-vim build-glibc-host-sysroot build-pkgconf build-libudev-zero build-rust
+OPTIONAL_SCRIPT_NAMES := build-musl-dev build-gcc-native build-ncurses build-vim build-glibc-host-sysroot build-zlib-glibc build-pkgconf build-libudev-zero build-rust
 OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(OPTIONAL_SCRIPT_NAMES)))
 PACKAGE_SCRIPTS := $(filter-out $(PRIORITY_SCRIPT) $(ACCOUNT_SCRIPT) $(HELPER_SCRIPTS),$(sort $(wildcard $(SCRIPTS_DIR)/*.sh)))
 REQUIRED_SCRIPTS := $(filter-out $(OPTIONAL_SCRIPTS),$(PACKAGE_SCRIPTS))
@@ -69,7 +69,7 @@ ifneq ($(filter 1 yes true on,$(WITH_NATIVE_GCC)),)
 ENABLED_OPTIONAL_SCRIPT_NAMES += build-musl-dev build-gcc-native
 endif
 ifneq ($(filter 1 yes true on,$(WITH_GLIBC_HOST_SYSROOT)),)
-ENABLED_OPTIONAL_SCRIPT_NAMES += build-glibc-host-sysroot build-pkgconf build-libudev-zero
+ENABLED_OPTIONAL_SCRIPT_NAMES += build-glibc-host-sysroot build-zlib-glibc build-pkgconf build-libudev-zero
 endif
 ifneq ($(filter 1 yes true on,$(WITH_VIM)),)
 ENABLED_OPTIONAL_SCRIPT_NAMES += build-ncurses build-vim
@@ -180,7 +180,7 @@ help:
 	@echo "                       WITH_BUILD_ESSENTIAL=1 enables libc/libstdc++ headers and dev libs"
 	@echo "                       WITH_NATIVE_GCC=1 enables build-musl-dev + build-gcc-native"
 	@echo "                       WITH_GLIBC_HOST_SYSROOT=1 stages the RISC-V glibc host linker sysroot"
-	@echo "                         and adds pkgconf + static libudev-zero for Cargo host crates"
+	@echo "                         and adds pkgconf + static zlib/libudev-zero for Cargo host crates"
 	@echo "                         native gcc also needs GCC prerequisite tarballs (gmp/mpfr/mpc)"
 	@echo "                       WITH_VIM=1 enables build-ncurses + build-vim"
 	@echo "                       WITH_RUST=1 enables fixed RISC-V rustc + cargo + rustdoc"
