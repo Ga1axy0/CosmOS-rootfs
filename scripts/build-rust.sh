@@ -130,6 +130,15 @@ install_rootfs_wrapper() {
     # directory while the dynamic loader also sees the Rust shared libraries.
     rm -f "$wrapper_path"
     printf '%s\n' '#!/bin/sh' > "$wrapper_path"
+    if [[ "$tool_name" == cargo ]]; then
+        # bindgen is loaded by Cargo build scripts.  These paths are harmless
+        # before build-libclang-riscv64 runs and keep wrapper regeneration
+        # from discarding the libclang environment.
+        printf '%s\n' \
+            'export LIBCLANG_PATH="/usr/lib/llvm-18/lib"' \
+            'export LD_LIBRARY_PATH="/usr/lib/llvm-18/lib:/usr/lib/riscv64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"' \
+            >> "$wrapper_path"
+    fi
     printf 'export LD_LIBRARY_PATH="%s${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\n' \
         "$RUST_INSTALL_DIR/lib" >> "$wrapper_path"
     printf 'exec "%s" "$@"\n' "$guest_path" >> "$wrapper_path"

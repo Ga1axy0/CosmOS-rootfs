@@ -36,6 +36,7 @@ WITH_BUILD_ESSENTIAL ?= 1
 WITH_NATIVE_GCC ?= 1
 WITH_GLIBC_HOST_SYSROOT ?= 1
 WITH_RUST ?= 1
+WITH_LIBCLANG ?= $(WITH_RUST)
 
 export TARGET
 export CROSS_PREFIX
@@ -56,7 +57,7 @@ export MUSL_ARCH
 PRIORITY_SCRIPT := $(SCRIPTS_DIR)/build-busybox.sh
 ACCOUNT_SCRIPT := $(SCRIPTS_DIR)/build-shadow.sh
 HELPER_SCRIPTS := $(COMMON_SCRIPT)
-OPTIONAL_SCRIPT_NAMES := build-musl-dev build-gcc-native build-ncurses build-vim build-glibc-host-sysroot build-zlib-glibc build-pkgconf build-libudev-zero build-rust
+OPTIONAL_SCRIPT_NAMES := build-musl-dev build-gcc-native build-ncurses build-vim build-glibc-host-sysroot build-zlib-glibc build-pkgconf build-libudev-zero build-rust build-libclang-riscv64
 OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(OPTIONAL_SCRIPT_NAMES)))
 PACKAGE_SCRIPTS := $(filter-out $(PRIORITY_SCRIPT) $(ACCOUNT_SCRIPT) $(HELPER_SCRIPTS),$(sort $(wildcard $(SCRIPTS_DIR)/*.sh)))
 REQUIRED_SCRIPTS := $(filter-out $(OPTIONAL_SCRIPTS),$(PACKAGE_SCRIPTS))
@@ -76,6 +77,9 @@ ENABLED_OPTIONAL_SCRIPT_NAMES += build-ncurses build-vim
 endif
 ifneq ($(filter 1 yes true on,$(WITH_RUST)),)
 ENABLED_OPTIONAL_SCRIPT_NAMES += build-rust
+endif
+ifneq ($(filter 1 yes true on,$(WITH_LIBCLANG)),)
+ENABLED_OPTIONAL_SCRIPT_NAMES += build-libclang-riscv64
 endif
 ROOTFS_INIT_OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(call uniq,$(ENABLED_OPTIONAL_SCRIPT_NAMES))))
 ROOTFS_INIT_SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(REQUIRED_SCRIPTS) $(ROOTFS_INIT_OPTIONAL_SCRIPTS) $(if $(wildcard $(ACCOUNT_SCRIPT)),$(ACCOUNT_SCRIPT))
@@ -184,6 +188,7 @@ help:
 	@echo "                         native gcc also needs GCC prerequisite tarballs (gmp/mpfr/mpc)"
 	@echo "                       WITH_VIM=1 enables build-ncurses + build-vim"
 	@echo "                       WITH_RUST=1 enables fixed RISC-V rustc + cargo + rustdoc"
+	@echo "                       WITH_LIBCLANG=1 installs the RISC-V libclang runtime for bindgen"
 	@echo "                     Manual targets:"
 	@echo "                       make build-gcc-native-{rv,la} builds native gcc/g++ when prerequisites are ready"
 	@echo "  make <script>      Build one package into rootfs-rv and rootfs-la"
