@@ -70,6 +70,11 @@ for x in $BINUTILS_CMDS; do
 
     if [ -x "$ROOTFS/usr/bin/$x" ]; then
         ln -sf "../usr/bin/$x" "$ROOTFS/bin/$x"
+        # Cargo's cc-rs target configuration expects target-prefixed binutils
+        # names even when binutils installed only the unprefixed commands.
+        if [ ! -e "$ROOTFS/usr/bin/${TARGET}-$x" ]; then
+            ln -sf "$x" "$ROOTFS/usr/bin/${TARGET}-$x"
+        fi
     fi
 done
 

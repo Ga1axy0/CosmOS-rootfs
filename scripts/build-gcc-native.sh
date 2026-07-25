@@ -167,6 +167,18 @@ install_native_gcc_symlinks() {
     if [ -x "$bindir/cpp" ] && [ ! -e "$bindir/${TARGET}-cpp" ]; then
         ln -sf cpp "$bindir/${TARGET}-cpp"
     fi
+
+    # cc-rs and Cargo target configuration use the conventional -cc/-ar
+    # names, while the native toolchain installs gcc and unprefixed binutils.
+    if [ -x "$bindir/gcc" ] && [ ! -e "$bindir/${TARGET}-cc" ]; then
+        ln -sf gcc "$bindir/${TARGET}-cc"
+    fi
+    if [ -x "$bindir/ar" ] && [ ! -e "$bindir/${TARGET}-ar" ]; then
+        ln -sf ar "$bindir/${TARGET}-ar"
+    fi
+    if [ -x "$bindir/ranlib" ] && [ ! -e "$bindir/${TARGET}-ranlib" ]; then
+        ln -sf ranlib "$bindir/${TARGET}-ranlib"
+    fi
 }
 
 strip_native_gcc_binaries() {
