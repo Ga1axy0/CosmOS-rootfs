@@ -1,0 +1,26 @@
+#!/bin/bash
+
+BASE=/mnt/glibc
+SCRIPT="$BASE/cagent_testcode.sh"
+
+if [ ! -f "$SCRIPT" ] && [ -f "$BASE/cagent.sh" ]; then
+    SCRIPT="$BASE/cagent.sh"
+fi
+
+# The test binaries were built against the glibc userland on the mounted
+# public image, so let the dynamic loader find those libraries after /mnt is
+# attached below the guest root.
+# Keep the loader/libc pair from the guest rootfs first.  The public image's
+# glibc is a separate build and its GLIBC_PRIVATE symbols must not be mixed
+# with the rootfs loader; only use the public multiarch directories for extra
+# libraries such as libpcre2.
+export LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:/mnt/lib:/mnt/lib64:/mnt/usr/lib:/mnt/usr/lib/riscv64-linux-gnu:/mnt/usr/lib/loongarch64-linux-gnu
+export PATH="$BASE:/mnt/usr/local/bin:/mnt/usr/bin:/mnt/bin:/mnt/sbin:/bin:/sbin:/usr/bin:/usr/sbin:/root"
+
+if [ ! -f "$SCRIPT" ]; then
+    echo "[cagent-run-glibc] missing cagent_testcode.sh/cagent.sh in $BASE" >&2
+    exit 2
+fi
+
+cd "$BASE" || exit 2
+exec /bin/bash "$SCRIPT" "$@"

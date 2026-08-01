@@ -1,2 +1,2 @@
 #!/bin/bash
-exec /bin/bash --login /root/ltp-auto-run
+exec /bin/bash --login /root/final_auto_run

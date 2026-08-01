@@ -1,0 +1,40 @@
+#!/bin/sh
+
+SCRIPT=/mnt/glibc/buildstorm_testcode.sh
+TMP=/tmp/buildstorm-glibc.$$
+
+if [ ! -f "$SCRIPT" ]; then
+    echo "[buildstorm-run-glibc] missing $SCRIPT" >&2
+    exit 2
+fi
+
+trap 'rm -f "$TMP"' EXIT HUP INT TERM
+
+# Cargo's complete host-prepared cache is installed on the guest root disk.
+# If an older image only has the seed cache on /mnt, import it first; this is
+# idempotent when /root/.cargo already carries the completion marker.
+if [ -x /root/prepare-cargo-cache ]; then
+    /root/prepare-cargo-cache || exit 1
+fi
+
+# Prefer the glibc userland, compiler utilities, and libraries carried by the
+# mounted public image as well as its Rust toolchain.
+export LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:/mnt/lib:/mnt/lib64:/mnt/usr/lib:/mnt/usr/lib/riscv64-linux-gnu:/mnt/usr/lib/loongarch64-linux-gnu
+if [ -d /mnt/usr/lib/llvm-19/lib ]; then
+    export LIBCLANG_PATH=/mnt/usr/lib/llvm-19/lib
+fi
+
+# Keep the contest script unchanged on the mounted image, but remap the paths
+# that were written for the original standalone rootfs layout.
+sed \
+    -e 's#^export PATH=.*#export PATH=/mnt/root/.cargo/bin:/mnt/usr/local/bin:/mnt/usr/bin:/mnt/bin:/mnt/sbin:/bin:/sbin:/usr/bin:/usr/sbin#' \
+    -e 's#^export HOME=.*#export HOME=/root RUSTUP_HOME=/mnt/root/.rustup CARGO_HOME=/root/.cargo#' \
+    -e 's#/work/tgoskits#/mnt/work/tgoskits#g' \
+    -e 's#/work/.build.rc#/mnt/work/.build.rc#g' \
+    -e 's#/work/buildstorm.build.out#/mnt/work/buildstorm.build.out#g' \
+    "$SCRIPT" > "$TMP" || exit 2
+
+/bin/sh "$TMP" "$@"
+status=$?
+rm -f "$TMP"
+exit "$status"

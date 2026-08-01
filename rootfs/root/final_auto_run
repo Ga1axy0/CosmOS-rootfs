@@ -1,0 +1,135 @@
+#!/bin/sh
+# Unified entry point for the mounted public-image tests.
+#
+# With no mode argument, give an interactive shell ten seconds to cancel the
+# automatic run with Ctrl-C, then execute cagent followed by buildstorm. A
+# mode can be selected explicitly when only one test is wanted:
+#
+#   final_auto_run cagent
+#   final_auto_run buildstorm
+#   final_auto_run all
+
+set -u
+
+CAGENT_RUNNER=${CAGENT_RUNNER:-/root/cagent-run-glibc}
+BUILDSTORM_RUNNER=${BUILDSTORM_RUNNER:-/root/buildstorm-run-glibc}
+DEFAULT_MODE=${FINAL_AUTO_DEFAULT:-all}
+
+usage() {
+    echo "Usage: ${0##*/} [cagent|buildstorm|all] [test-args ...]" >&2
+    echo "  no mode: wait 10s, then run cagent followed by buildstorm" >&2
+}
+
+valid_mode() {
+    case "$1" in
+        cagent|buildstorm|all) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+MODE=""
+WAIT=0
+if [ "$#" -gt 0 ]; then
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --wait)
+            WAIT=1
+            shift
+            if [ "$#" -gt 0 ]; then
+                MODE="$1"
+                shift
+            fi
+            ;;
+        cagent|buildstorm|all)
+            MODE="$1"
+            shift
+            ;;
+        *)
+            usage
+            exit 2
+            ;;
+    esac
+fi
+
+if [ -z "$MODE" ]; then
+    MODE="$DEFAULT_MODE"
+    WAIT=1
+fi
+
+if ! valid_mode "$MODE"; then
+    echo "[final_auto_run] invalid mode: $MODE" >&2
+    usage
+    exit 2
+fi
+
+if [ "$WAIT" -eq 1 ]; then
+    interrupted=0
+    on_interrupt() {
+        interrupted=1
+        echo
+        echo "[final_auto_run] interrupted; returning to the shell"
+        # `/sbin/init` starts this script as PID 1.  Returning with `exit 130`
+        # would therefore shut the guest down instead of giving the user the
+        # interactive shell promised by the countdown.  Replace the runner
+        # with a login shell while keeping the same controlling tty.
+        trap - INT
+        exec /bin/bash --login
+    }
+    trap on_interrupt INT
+
+    echo "[final_auto_run] default mode: $MODE (Ctrl-C within 10s to cancel)"
+    seconds=10
+    while [ "$seconds" -gt 0 ]; do
+        printf '\r[final_auto_run] starting in %2ss...' "$seconds"
+        sleep 1
+        seconds=$((seconds - 1))
+    done
+    printf '\n'
+    trap - INT
+fi
+
+run_cagent() {
+    echo "===== final_auto_run: cagent ====="
+    if [ ! -x "$CAGENT_RUNNER" ]; then
+        echo "[final_auto_run] missing executable: $CAGENT_RUNNER" >&2
+        return 127
+    fi
+    "$CAGENT_RUNNER" "$@"
+}
+
+run_buildstorm() {
+    echo "===== final_auto_run: buildstorm ====="
+    if [ ! -x "$BUILDSTORM_RUNNER" ]; then
+        echo "[final_auto_run] missing executable: $BUILDSTORM_RUNNER" >&2
+        return 127
+    fi
+    "$BUILDSTORM_RUNNER" "$@"
+}
+
+status=0
+case "$MODE" in
+    cagent)
+        run_cagent "$@" || status=$?
+        ;;
+    buildstorm)
+        run_buildstorm "$@" || status=$?
+        ;;
+    all)
+        run_cagent "$@" || status=$?
+        buildstorm_status=0
+        run_buildstorm "$@" || buildstorm_status=$?
+        if [ "$status" -eq 0 ]; then
+            status="$buildstorm_status"
+        fi
+        ;;
+esac
+
+if [ "$status" -eq 0 ]; then
+    echo "[final_auto_run] all requested tests passed"
+else
+    echo "[final_auto_run] tests failed (rc=$status)" >&2
+fi
+exit "$status"

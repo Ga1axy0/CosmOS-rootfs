@@ -1,0 +1,51 @@
+#!/bin/sh
+# Import the Cargo registry prepared by the host-side rootfs build.
+#
+# The RISC-V test image mounts the public seed disk at /mnt. Cargo itself runs
+# with HOME=/root, so the seed cache must be copied into /root/.cargo before a
+# guest-side build or fetch starts. Only architecture-independent Cargo data is
+# copied; host-side executables under ~/.cargo/bin are never imported.
+
+set -eu
+
+SOURCE_HOME=${CARGO_CACHE_SOURCE:-/mnt/root/.cargo}
+TARGET_HOME=${CARGO_HOME:-/root/.cargo}
+MARKER="$TARGET_HOME/.cosmos-host-cache-ready"
+
+if [ -f "$MARKER" ]; then
+    exit 0
+fi
+
+if [ ! -d "$SOURCE_HOME" ]; then
+    # Some rootfs variants already contain their own cache, and self-compile
+    # images do not mount a seed disk. In both cases there is nothing to do.
+    exit 0
+fi
+
+mkdir -p "$TARGET_HOME"
+copied=0
+
+copy_tree() {
+    name="$1"
+    if [ -d "$SOURCE_HOME/$name" ]; then
+        mkdir -p "$TARGET_HOME/$name"
+        cp -a "$SOURCE_HOME/$name/." "$TARGET_HOME/$name/"
+        copied=1
+    fi
+}
+
+copy_tree registry
+copy_tree git
+
+if [ -f "$SOURCE_HOME/config.toml" ]; then
+    cp -a "$SOURCE_HOME/config.toml" "$TARGET_HOME/config.toml"
+fi
+
+if [ "$copied" -eq 0 ]; then
+    exit 0
+fi
+
+# Write the marker only after every cache component has been copied. A later
+# invocation therefore retries after an interrupted copy instead of accepting
+# a partially populated registry.
+printf '%s\n' 'host-prepared Cargo cache' > "$MARKER"
