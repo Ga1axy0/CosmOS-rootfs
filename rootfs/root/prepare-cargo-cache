@@ -5,9 +5,10 @@
 # The RISC-V test image mounts the public seed disk at /mnt. Cargo itself runs
 # with HOME=/root, so the seed cache must be copied into /root/.cargo before a
 # guest-side build or fetch starts. Only architecture-independent Cargo data is
-# copied; host-side executables under ~/.cargo/bin are never imported. The
-# public disk's riscv64-linux-gnu-gcc is exposed through a guest wrapper so
-# Cargo always passes /mnt as its glibc sysroot.
+# copied; host-side executables under ~/.cargo/bin are never imported. Public
+# GNU compilers are exposed through guest wrappers. Both architectures also
+# get an isolated libclang C++ runtime so LLVM cannot accidentally load the
+# rootfs's older libstdc++ or the public disk's incompatible libc.
 
 set -eu
 
@@ -19,6 +20,52 @@ TARGET_TRIPLE=${CARGO_GLIBC_HOST_TARGET:-riscv64gc-unknown-linux-gnu}
 LINKER_WRAPPER="$TARGET_HOME/bin/${TARGET_TRIPLE}-gcc"
 CONFIG_PATH="$TARGET_HOME/config.toml"
 GUEST_ARCH=${CARGO_GUEST_ARCH:-$(uname -m 2>/dev/null || printf unknown)}
+LIBCLANG_RUNTIME_DIR=${CARGO_LIBCLANG_RUNTIME_DIR:-$TARGET_HOME/libclang-runtime}
+PUBLIC_LLVM_LIBDIR="$PUBLIC_ROOT/usr/lib/llvm-19/lib"
+
+# LLVM 19 on the public images needs a newer GLIBCXX ABI than the rootfs's
+# libstdc++.  Do not prepend the complete public multiarch directory: doing so
+# can mix the public libc with the rootfs loader and cause GLIBC_PRIVATE symbol
+# failures.  Instead expose only libstdc++ and libgcc_s through a private
+# directory which buildstorm puts at the front of LD_LIBRARY_PATH.
+prepare_libclang_runtime() {
+    case "$GUEST_ARCH" in
+        riscv64) public_multiarch=riscv64-linux-gnu ;;
+        loongarch64) public_multiarch=loongarch64-linux-gnu ;;
+        *) return 0 ;;
+    esac
+
+    [ -d "$PUBLIC_LLVM_LIBDIR" ] || return 0
+
+    mkdir -p "$LIBCLANG_RUNTIME_DIR"
+    runtime_ready=1
+    for runtime_lib in libstdc++.so.6 libgcc_s.so.1; do
+        runtime_source=""
+        for public_libdir in \
+            "$PUBLIC_ROOT/usr/lib/$public_multiarch" \
+            "$PUBLIC_ROOT/lib/$public_multiarch"
+        do
+            candidate="$public_libdir/$runtime_lib"
+            if [ -f "$candidate" ] || [ -L "$candidate" ]; then
+                runtime_source="$candidate"
+                break
+            fi
+        done
+
+        if [ -z "$runtime_source" ]; then
+            echo "[prepare-cargo-cache] warning: public libclang dependency not found: $runtime_lib ($public_multiarch)" >&2
+            runtime_ready=0
+            continue
+        fi
+        ln -sf "$runtime_source" "$LIBCLANG_RUNTIME_DIR/$runtime_lib"
+    done
+
+    if [ "$runtime_ready" -eq 1 ]; then
+        echo "[prepare-cargo-cache] libclang C++ runtime: $LIBCLANG_RUNTIME_DIR ($public_multiarch)"
+    fi
+}
+
+prepare_libclang_runtime
 
 # The LoongArch public image is already a self-contained build environment.
 # Keep its large Cargo registry in place under /mnt and create only the small

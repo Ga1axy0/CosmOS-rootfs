@@ -77,12 +77,26 @@ else
 fi
 export BUILDSTORM_REUSE_TG_XTASK
 
-# Prefer the glibc userland, compiler utilities, and libraries carried by the
-# mounted public image as well as its Rust toolchain.
-export LD_LIBRARY_PATH="$BUILDSTORM_LD_LIBRARY_PATH"
-if [ -d /mnt/usr/lib/llvm-19/lib ]; then
-    export LIBCLANG_PATH=/mnt/usr/lib/llvm-19/lib
+# LLVM 19 is shared by both public evaluation images.  Its C++ ABI is newer
+# than the rootfs's libstdc++, but prepending the complete public multiarch
+# directory would also select its libc and recreate the GLIBC_PRIVATE loader
+# mismatch.  prepare-cargo-cache therefore exposes only libstdc++ and libgcc_s
+# through this private directory.
+LIBCLANG_RUNTIME_DIR=${CARGO_LIBCLANG_RUNTIME_DIR:-/root/.cargo/libclang-runtime}
+PUBLIC_LIBCLANG_DIR=/mnt/usr/lib/llvm-19/lib
+if [ -d "$PUBLIC_LIBCLANG_DIR" ]; then
+    for runtime_lib in libstdc++.so.6 libgcc_s.so.1; do
+        if [ ! -f "$LIBCLANG_RUNTIME_DIR/$runtime_lib" ] && \
+                [ ! -L "$LIBCLANG_RUNTIME_DIR/$runtime_lib" ]; then
+            echo "[buildstorm-run-glibc] missing isolated libclang dependency: $LIBCLANG_RUNTIME_DIR/$runtime_lib" >&2
+            exit 1
+        fi
+    done
+    export LIBCLANG_PATH="$PUBLIC_LIBCLANG_DIR"
+    BUILDSTORM_LD_LIBRARY_PATH="$LIBCLANG_RUNTIME_DIR:$PUBLIC_LIBCLANG_DIR:$BUILDSTORM_LD_LIBRARY_PATH"
+    echo "[buildstorm-run-glibc] libclang runtime: $LIBCLANG_RUNTIME_DIR"
 fi
+export LD_LIBRARY_PATH="$BUILDSTORM_LD_LIBRARY_PATH"
 
 # Keep the contest script unchanged on the mounted image, but remap the paths
 # that were written for the original standalone rootfs layout.
