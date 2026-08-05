@@ -14,7 +14,14 @@ fi
 # glibc is a separate build and its GLIBC_PRIVATE symbols must not be mixed
 # with the rootfs loader; only use the public multiarch directories for extra
 # libraries such as libpcre2.
-export LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:/mnt/lib:/mnt/lib64:/mnt/usr/lib:/mnt/usr/lib/riscv64-linux-gnu:/mnt/usr/lib/loongarch64-linux-gnu
+case "$(uname -m 2>/dev/null || printf unknown)" in
+    loongarch64)
+        export LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:/mnt/lib:/mnt/lib64:/mnt/usr/lib:/mnt/usr/lib/loongarch64-linux-gnu
+        ;;
+    *)
+        export LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:/mnt/lib:/mnt/lib64:/mnt/usr/lib:/mnt/usr/lib/riscv64-linux-gnu:/mnt/usr/lib/loongarch64-linux-gnu
+        ;;
+esac
 export PATH="$BASE:/mnt/usr/local/bin:/mnt/usr/bin:/mnt/bin:/mnt/sbin:/bin:/sbin:/usr/bin:/usr/sbin:/root"
 
 if [ ! -f "$SCRIPT" ]; then

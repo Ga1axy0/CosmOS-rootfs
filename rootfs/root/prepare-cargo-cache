@@ -1,51 +1,190 @@
 #!/bin/sh
-# Import the Cargo registry prepared by the host-side rootfs build.
+# Import the Cargo registry prepared by the host-side rootfs build and prepare
+# the guest-side GNU host toolchain supplied by the mounted public disk.
 #
 # The RISC-V test image mounts the public seed disk at /mnt. Cargo itself runs
 # with HOME=/root, so the seed cache must be copied into /root/.cargo before a
 # guest-side build or fetch starts. Only architecture-independent Cargo data is
-# copied; host-side executables under ~/.cargo/bin are never imported.
+# copied; host-side executables under ~/.cargo/bin are never imported. The
+# public disk's riscv64-linux-gnu-gcc is exposed through a guest wrapper so
+# Cargo always passes /mnt as its glibc sysroot.
 
 set -eu
 
 SOURCE_HOME=${CARGO_CACHE_SOURCE:-/mnt/root/.cargo}
 TARGET_HOME=${CARGO_HOME:-/root/.cargo}
 MARKER="$TARGET_HOME/.cosmos-host-cache-ready"
+PUBLIC_ROOT=${CARGO_PUBLIC_ROOT:-/mnt}
+TARGET_TRIPLE=${CARGO_GLIBC_HOST_TARGET:-riscv64gc-unknown-linux-gnu}
+LINKER_WRAPPER="$TARGET_HOME/bin/${TARGET_TRIPLE}-gcc"
+CONFIG_PATH="$TARGET_HOME/config.toml"
+GUEST_ARCH=${CARGO_GUEST_ARCH:-$(uname -m 2>/dev/null || printf unknown)}
 
-if [ -f "$MARKER" ]; then
-    exit 0
+# The LoongArch public image is already a self-contained build environment.
+# Keep its large Cargo registry in place under /mnt and create only the small
+# GNU-host linker wrapper on the writable root disk.  This branch deliberately
+# precedes the RISC-V cache import below: disk-la.img is too small to duplicate
+# the public image's registry, and FINAL=1 would repeat that copy on every
+# snapshot boot.
+if [ "$GUEST_ARCH" = loongarch64 ]; then
+    LA_TARGET_TRIPLE=${CARGO_GLIBC_HOST_TARGET:-loongarch64-unknown-linux-gnu}
+    LA_LINKER_WRAPPER=${CARGO_GLIBC_HOST_LINKER_WRAPPER:-$TARGET_HOME/bin/${LA_TARGET_TRIPLE}-gcc}
+    echo "[prepare-cargo-cache] configuring mounted LoongArch toolchain"
+
+    public_gcc=""
+    for candidate in "$PUBLIC_ROOT/usr/bin/loongarch64-linux-gnu-gcc-"*; do
+        if [ -f "$candidate" ]; then
+            public_gcc="$candidate"
+            break
+        fi
+    done
+    if [ -z "$public_gcc" ] && [ -f "$PUBLIC_ROOT/usr/bin/loongarch64-linux-gnu-gcc" ]; then
+        public_gcc="$PUBLIC_ROOT/usr/bin/loongarch64-linux-gnu-gcc"
+    fi
+    if [ -z "$public_gcc" ] && [ -f "$PUBLIC_ROOT/usr/bin/gcc" ]; then
+        public_gcc="$PUBLIC_ROOT/usr/bin/gcc"
+    fi
+
+    if [ -z "$public_gcc" ]; then
+        echo "[prepare-cargo-cache] warning: no public-disk LoongArch glibc GCC found under $PUBLIC_ROOT/usr/bin" >&2
+        exit 0
+    fi
+
+    if [ ! -d "$SOURCE_HOME/registry" ]; then
+        echo "[prepare-cargo-cache] warning: mounted LoongArch Cargo registry not found: $SOURCE_HOME/registry" >&2
+    fi
+    public_loader="$PUBLIC_ROOT/lib/loongarch64-linux-gnu/ld-linux-loongarch-lp64d.so.1"
+    if [ ! -f "$public_loader" ]; then
+        echo "[prepare-cargo-cache] warning: mounted LoongArch glibc loader not found: $public_loader" >&2
+        exit 0
+    fi
+
+    echo "[prepare-cargo-cache] generating LoongArch linker wrapper: $LA_LINKER_WRAPPER"
+    mkdir -p "$(dirname "$LA_LINKER_WRAPPER")"
+    cat > "$LA_LINKER_WRAPPER" <<WRAPPER_EOF
+#!/bin/sh
+set -eu
+
+GCC="$public_gcc"
+PUBLIC_ROOT="$PUBLIC_ROOT"
+linking=1
+for arg in "\$@"; do
+    case "\$arg" in
+        -c|-E|-S) linking=0 ;;
+    esac
+done
+
+export LD_LIBRARY_PATH="/lib:/lib64:/usr/lib:/usr/lib64:\$PUBLIC_ROOT/lib/loongarch64-linux-gnu:\$PUBLIC_ROOT/usr/lib/loongarch64-linux-gnu:\$PUBLIC_ROOT/lib:\$PUBLIC_ROOT/usr/lib"
+if [ "\$linking" -eq 0 ]; then
+    exec "\$GCC" --sysroot="\$PUBLIC_ROOT" "\$@"
 fi
+exec "\$GCC" --sysroot="\$PUBLIC_ROOT" \
+    "-Wl,--dynamic-linker=\$PUBLIC_ROOT/lib/loongarch64-linux-gnu/ld-linux-loongarch-lp64d.so.1" \
+    -Wl,--disable-new-dtags \
+    "-Wl,-rpath,\$PUBLIC_ROOT/lib/loongarch64-linux-gnu:\$PUBLIC_ROOT/usr/lib/loongarch64-linux-gnu" "\$@"
+WRAPPER_EOF
+    chmod 0755 "$LA_LINKER_WRAPPER"
 
-if [ ! -d "$SOURCE_HOME" ]; then
-    # Some rootfs variants already contain their own cache, and self-compile
-    # images do not mount a seed disk. In both cases there is nothing to do.
+    echo "[prepare-cargo-cache] using mounted LoongArch Cargo cache: $SOURCE_HOME"
+    echo "[prepare-cargo-cache] using public LoongArch glibc GCC: $public_gcc"
+    echo "[prepare-cargo-cache] Cargo linker: $LA_LINKER_WRAPPER (sysroot $PUBLIC_ROOT)"
     exit 0
 fi
 
 mkdir -p "$TARGET_HOME"
-copied=0
 
-copy_tree() {
-    name="$1"
-    if [ -d "$SOURCE_HOME/$name" ]; then
-        mkdir -p "$TARGET_HOME/$name"
-        cp -a "$SOURCE_HOME/$name/." "$TARGET_HOME/$name/"
-        copied=1
+if [ ! -f "$MARKER" ] && [ -d "$SOURCE_HOME" ]; then
+    copied=0
+
+    copy_tree() {
+        name="$1"
+        if [ -d "$SOURCE_HOME/$name" ]; then
+            mkdir -p "$TARGET_HOME/$name"
+            cp -a "$SOURCE_HOME/$name/." "$TARGET_HOME/$name/"
+            copied=1
+        fi
+    }
+
+    copy_tree registry
+    copy_tree git
+
+    if [ -f "$SOURCE_HOME/config.toml" ]; then
+        cp -a "$SOURCE_HOME/config.toml" "$TARGET_HOME/config.toml"
     fi
-}
 
-copy_tree registry
-copy_tree git
-
-if [ -f "$SOURCE_HOME/config.toml" ]; then
-    cp -a "$SOURCE_HOME/config.toml" "$TARGET_HOME/config.toml"
+    if [ "$copied" -ne 0 ]; then
+        # Write the marker only after every cache component has been copied. A
+        # later invocation retries after an interrupted copy instead of
+        # accepting a partially populated registry.
+        printf '%s\n' 'host-prepared Cargo cache' > "$MARKER"
+    fi
 fi
 
-if [ "$copied" -eq 0 ]; then
+# The helper is also copied into the loongarch rootfs by the common image
+# recipe.  Only the RISC-V image uses the public RISC-V GNU host compiler.
+if [ "$GUEST_ARCH" != riscv64 ]; then
     exit 0
 fi
 
-# Write the marker only after every cache component has been copied. A later
-# invocation therefore retries after an interrupted copy instead of accepting
-# a partially populated registry.
-printf '%s\n' 'host-prepared Cargo cache' > "$MARKER"
+# Do not replace /lib/ld-linux... here.  The rootfs installs a matched glibc
+# loader/libc pair there; replacing only the loader with either public-disk
+# glibc variant causes GLIBC_PRIVATE symbol failures in rustc and GCC.
+
+public_gcc=""
+# The public image normally exposes GCC through symlinks such as
+# riscv64-linux-gnu-gcc -> riscv64-linux-gnu-gcc-14.  Resolve the versioned
+# regular file ourselves: the guest filesystem's `test -x` does not reliably
+# follow that symlink chain.
+for candidate in "$PUBLIC_ROOT/usr/bin/riscv64-linux-gnu-gcc-"*; do
+    if [ -f "$candidate" ]; then
+        public_gcc="$candidate"
+        break
+    fi
+done
+if [ -z "$public_gcc" ] && [ -f "$PUBLIC_ROOT/usr/bin/riscv64-linux-gnu-gcc" ]; then
+    public_gcc="$PUBLIC_ROOT/usr/bin/riscv64-linux-gnu-gcc"
+fi
+if [ -z "$public_gcc" ] && [ -f "$PUBLIC_ROOT/usr/bin/gcc" ]; then
+    public_gcc="$PUBLIC_ROOT/usr/bin/gcc"
+fi
+
+if [ -z "$public_gcc" ]; then
+    echo "[prepare-cargo-cache] warning: no public-disk RISC-V glibc GCC found under $PUBLIC_ROOT/usr/bin" >&2
+    exit 0
+fi
+
+# Do not point Cargo directly at the public GCC: GCC's executable path alone
+# does not select /mnt as its sysroot, and Cargo's linker value cannot contain
+# command-line arguments.  Generate a small guest-native wrapper instead.
+mkdir -p "$(dirname "$LINKER_WRAPPER")"
+cat > "$LINKER_WRAPPER" <<WRAPPER_EOF
+#!/bin/sh
+set -eu
+
+GCC="$public_gcc"
+PUBLIC_ROOT="$PUBLIC_ROOT"
+
+export LD_LIBRARY_PATH="/lib:/lib64:/usr/lib:/usr/lib64:\$PUBLIC_ROOT/lib/riscv64-linux-gnu:\$PUBLIC_ROOT/usr/lib/riscv64-linux-gnu:\$PUBLIC_ROOT/lib:\$PUBLIC_ROOT/usr/lib:\$PUBLIC_ROOT/usr/lib/loongarch64-linux-gnu"
+exec "\$GCC" --sysroot="\$PUBLIC_ROOT" "\$@"
+WRAPPER_EOF
+chmod 0755 "$LINKER_WRAPPER"
+
+# The host-side file intentionally contains only the generic offline setting.
+# Replace it here with the runtime linker configuration, so stale images that
+# still carry the old rootfs linker path are repaired on boot as well.
+config_tmp="$CONFIG_PATH.cosmos-tmp"
+cat > "$config_tmp" <<CONFIG_EOF
+[net]
+offline = true
+git-fetch-with-cli = true
+
+[env]
+CC_riscv64gc_unknown_linux_gnu = "$LINKER_WRAPPER"
+
+[target.$TARGET_TRIPLE]
+linker = "$LINKER_WRAPPER"
+CONFIG_EOF
+mv -f "$config_tmp" "$CONFIG_PATH"
+
+echo "[prepare-cargo-cache] using public glibc GCC: $public_gcc"
+echo "[prepare-cargo-cache] Cargo linker: $LINKER_WRAPPER (sysroot $PUBLIC_ROOT)"

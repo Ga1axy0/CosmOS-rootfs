@@ -65,6 +65,16 @@ if ! valid_mode "$MODE"; then
     exit 2
 fi
 
+# The mounted public disk supplies both the glibc loader used by its binaries
+# and the GCC used by Cargo build scripts.  Prepare these runtime paths before
+# cagent starts; buildstorm invokes the helper again harmlessly for safety.
+if [ -x /root/prepare-cargo-cache ]; then
+    /root/prepare-cargo-cache || {
+        echo "[final_auto_run] mounted-disk runtime preparation failed" >&2
+        exit 1
+    }
+fi
+
 if [ "$WAIT" -eq 1 ]; then
     interrupted=0
     on_interrupt() {

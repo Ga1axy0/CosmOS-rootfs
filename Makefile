@@ -33,8 +33,8 @@ COMMON_LDFLAGS ?= -static
 
 WITH_VIM ?= 1
 WITH_BUILD_ESSENTIAL ?= 1
-WITH_NATIVE_GCC ?= 1
-WITH_GLIBC_HOST_SYSROOT ?= 1
+WITH_NATIVE_GCC ?= 0
+WITH_GLIBC_HOST_SYSROOT ?= 0
 # The RV competition image gets Rust from the mounted test disk under /mnt.
 # Keep the optional in-rootfs cross Rust toolchain off by default.
 WITH_RUST ?= 0

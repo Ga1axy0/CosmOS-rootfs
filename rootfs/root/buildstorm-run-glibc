@@ -17,9 +17,53 @@ if [ -x /root/prepare-cargo-cache ]; then
     /root/prepare-cargo-cache || exit 1
 fi
 
+# Cargo's config file normally supplies this linker, but the buildstorm source
+# tree also carries its own .cargo/config.toml. Export target-specific
+# variables explicitly so GNU-host build scripts and proc macros cannot fall
+# back to the rootfs's musl `cc` when Cargo merges those configurations.
+#
+# RISC-V keeps using the host-prepared cache on the root disk. LoongArch uses
+# the complete Cargo cache already present on the mounted public image, which
+# avoids copying it into the much smaller disk-la.img on every snapshot boot.
+GUEST_ARCH=$(uname -m 2>/dev/null || printf unknown)
+case "$GUEST_ARCH" in
+    riscv64)
+        GLIBC_HOST_LINKER=${CARGO_GLIBC_HOST_LINKER:-/root/.cargo/bin/riscv64gc-unknown-linux-gnu-gcc}
+        BUILDSTORM_CARGO_HOME=/root/.cargo
+        BUILDSTORM_LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:/mnt/lib/riscv64-linux-gnu:/mnt/usr/lib/riscv64-linux-gnu:/mnt/lib:/mnt/lib64:/mnt/usr/lib:/mnt/usr/lib/loongarch64-linux-gnu
+        BUILDSTORM_TARGET_DIR_SED='s#^cd /work/tgoskits#cd /work/tgoskits#'
+        export CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER="$GLIBC_HOST_LINKER"
+        export CC_riscv64gc_unknown_linux_gnu="$GLIBC_HOST_LINKER"
+        export CC_RISCV64GC_UNKNOWN_LINUX_GNU="$GLIBC_HOST_LINKER"
+        ;;
+    loongarch64)
+        GLIBC_HOST_LINKER=${CARGO_GLIBC_HOST_LINKER:-/root/.cargo/bin/loongarch64-unknown-linux-gnu-gcc}
+        BUILDSTORM_CARGO_HOME=/mnt/root/.cargo
+        BUILDSTORM_LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:/mnt/lib/loongarch64-linux-gnu:/mnt/usr/lib/loongarch64-linux-gnu:/mnt/lib:/mnt/lib64:/mnt/usr/lib
+        BUILDSTORM_TARGET_DIR_SED='s#^cd /work/tgoskits#export CARGO_TARGET_DIR=/work/tgoskits/target/.cosmos-la-runtime; cd /work/tgoskits#'
+        if [ ! -d "$BUILDSTORM_CARGO_HOME" ]; then
+            echo "[buildstorm-run-glibc] missing Cargo home: $BUILDSTORM_CARGO_HOME" >&2
+            exit 1
+        fi
+        export CARGO_TARGET_LOONGARCH64_UNKNOWN_LINUX_GNU_LINKER="$GLIBC_HOST_LINKER"
+        export CC_loongarch64_unknown_linux_gnu="$GLIBC_HOST_LINKER"
+        export CC_LOONGARCH64_UNKNOWN_LINUX_GNU="$GLIBC_HOST_LINKER"
+        ;;
+    *)
+        echo "[buildstorm-run-glibc] unsupported guest architecture: $GUEST_ARCH" >&2
+        exit 1
+        ;;
+esac
+
+if [ ! -x "$GLIBC_HOST_LINKER" ]; then
+    echo "[buildstorm-run-glibc] missing glibc host linker: $GLIBC_HOST_LINKER" >&2
+    exit 1
+fi
+echo "[buildstorm-run-glibc] GNU host linker: $GLIBC_HOST_LINKER"
+
 # Prefer the glibc userland, compiler utilities, and libraries carried by the
 # mounted public image as well as its Rust toolchain.
-export LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:/mnt/lib:/mnt/lib64:/mnt/usr/lib:/mnt/usr/lib/riscv64-linux-gnu:/mnt/usr/lib/loongarch64-linux-gnu
+export LD_LIBRARY_PATH="$BUILDSTORM_LD_LIBRARY_PATH"
 if [ -d /mnt/usr/lib/llvm-19/lib ]; then
     export LIBCLANG_PATH=/mnt/usr/lib/llvm-19/lib
 fi
@@ -27,8 +71,9 @@ fi
 # Keep the contest script unchanged on the mounted image, but remap the paths
 # that were written for the original standalone rootfs layout.
 sed \
-    -e 's#^export PATH=.*#export PATH=/mnt/root/.cargo/bin:/mnt/usr/local/bin:/mnt/usr/bin:/mnt/bin:/mnt/sbin:/bin:/sbin:/usr/bin:/usr/sbin#' \
-    -e 's#^export HOME=.*#export HOME=/root RUSTUP_HOME=/mnt/root/.rustup CARGO_HOME=/root/.cargo#' \
+    -e 's#^export PATH=.*#export PATH=/root/.cargo/bin:/mnt/root/.cargo/bin:/mnt/usr/local/bin:/mnt/usr/bin:/mnt/bin:/mnt/sbin:/bin:/sbin:/usr/bin:/usr/sbin#' \
+    -e "s#^export HOME=.*#export HOME=/root RUSTUP_HOME=/mnt/root/.rustup CARGO_HOME=$BUILDSTORM_CARGO_HOME#" \
+    -e "$BUILDSTORM_TARGET_DIR_SED" \
     -e 's#/work/tgoskits#/mnt/work/tgoskits#g' \
     -e 's#/work/.build.rc#/mnt/work/.build.rc#g' \
     -e 's#/work/buildstorm.build.out#/mnt/work/buildstorm.build.out#g' \
