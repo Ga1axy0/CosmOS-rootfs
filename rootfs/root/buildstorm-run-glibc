@@ -2,13 +2,18 @@
 
 SCRIPT=/mnt/glibc/buildstorm_testcode.sh
 TMP=/tmp/buildstorm-glibc.$$
+CARGO_PROBE_LOG=/tmp/buildstorm-cargo-home.$$.log
+
+cleanup() {
+    rm -f "$TMP" "$CARGO_PROBE_LOG"
+}
 
 if [ ! -f "$SCRIPT" ]; then
     echo "[buildstorm-run-glibc] missing $SCRIPT" >&2
     exit 2
 fi
 
-trap 'rm -f "$TMP"' EXIT HUP INT TERM
+trap cleanup EXIT HUP INT TERM
 
 # Cargo's complete host-prepared cache is installed on the guest root disk.
 # If an older image only has the seed cache on /mnt, import it first; this is
@@ -22,14 +27,14 @@ fi
 # variables explicitly so GNU-host build scripts and proc macros cannot fall
 # back to the rootfs's musl `cc` when Cargo merges those configurations.
 #
-# RISC-V keeps using the host-prepared cache on the root disk. LoongArch uses
-# the complete Cargo cache already present on the mounted public image, which
-# avoids copying it into the much smaller disk-la.img on every snapshot boot.
+# Prefer the Cargo cache shipped beside the evaluated workspace, then fall
+# back to the host-prepared cache on the root disk.  The choice is validated
+# below with a complete offline metadata resolution before timed work starts.
 GUEST_ARCH=$(uname -m 2>/dev/null || printf unknown)
 case "$GUEST_ARCH" in
     riscv64)
         GLIBC_HOST_LINKER=${CARGO_GLIBC_HOST_LINKER:-/root/.cargo/bin/riscv64gc-unknown-linux-gnu-gcc}
-        BUILDSTORM_CARGO_HOME=/root/.cargo
+        BUILDSTORM_CARGO_HOME_CANDIDATES="/mnt/root/.cargo /root/.cargo"
         BUILDSTORM_LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:/mnt/lib/riscv64-linux-gnu:/mnt/usr/lib/riscv64-linux-gnu:/mnt/lib:/mnt/lib64:/mnt/usr/lib:/mnt/usr/lib/loongarch64-linux-gnu
         BUILDSTORM_TARGET_DIR_SED='s#^cd /work/tgoskits#cd /work/tgoskits#'
         export CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER="$GLIBC_HOST_LINKER"
@@ -38,13 +43,9 @@ case "$GUEST_ARCH" in
         ;;
     loongarch64)
         GLIBC_HOST_LINKER=${CARGO_GLIBC_HOST_LINKER:-/root/.cargo/bin/loongarch64-unknown-linux-gnu-gcc}
-        BUILDSTORM_CARGO_HOME=/mnt/root/.cargo
+        BUILDSTORM_CARGO_HOME_CANDIDATES="/mnt/root/.cargo /root/.cargo"
         BUILDSTORM_LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64:/mnt/lib/loongarch64-linux-gnu:/mnt/usr/lib/loongarch64-linux-gnu:/mnt/lib:/mnt/lib64:/mnt/usr/lib
         BUILDSTORM_TARGET_DIR_SED='s#^cd /work/tgoskits#export CARGO_TARGET_DIR=/work/tgoskits/target/.cosmos-la-runtime; cd /work/tgoskits#'
-        if [ ! -d "$BUILDSTORM_CARGO_HOME" ]; then
-            echo "[buildstorm-run-glibc] missing Cargo home: $BUILDSTORM_CARGO_HOME" >&2
-            exit 1
-        fi
         export CARGO_TARGET_LOONGARCH64_UNKNOWN_LINUX_GNU_LINKER="$GLIBC_HOST_LINKER"
         export CC_loongarch64_unknown_linux_gnu="$GLIBC_HOST_LINKER"
         export CC_LOONGARCH64_UNKNOWN_LINUX_GNU="$GLIBC_HOST_LINKER"
@@ -60,22 +61,6 @@ if [ ! -x "$GLIBC_HOST_LINKER" ]; then
     exit 1
 fi
 echo "[buildstorm-run-glibc] GNU host linker: $GLIBC_HOST_LINKER"
-
-# The public evaluation image already carries a native debug build of
-# tg-xtask.  Reuse it when available: the official test first builds
-# tg-xtask outside the timed region and then invokes it through the workspace
-# `cargo xtask` alias.  Replacing that invocation in the temporary test copy,
-# as well as skipping the explicit pre-build, prevents Cargo from resolving or
-# rebuilding tg-xtask inside the formal timed command.
-BUILDSTORM_TG_XTASK=/mnt/work/tgoskits/target/debug/tg-xtask
-if [ -x "$BUILDSTORM_TG_XTASK" ]; then
-    BUILDSTORM_REUSE_TG_XTASK=1
-    BUILDSTORM_TG_XTASK_SED="s#cargo xtask arceos build#$BUILDSTORM_TG_XTASK arceos build#"
-else
-    BUILDSTORM_REUSE_TG_XTASK=0
-    BUILDSTORM_TG_XTASK_SED='s#cargo xtask arceos build#cargo xtask arceos build#'
-fi
-export BUILDSTORM_REUSE_TG_XTASK
 
 # LLVM 19 is shared by both public evaluation images.  Its C++ ABI is newer
 # than the rootfs's libstdc++, but prepending the complete public multiarch
@@ -98,6 +83,103 @@ if [ -d "$PUBLIC_LIBCLANG_DIR" ]; then
 fi
 export LD_LIBRARY_PATH="$BUILDSTORM_LD_LIBRARY_PATH"
 
+# Cargo needs both the .crate archive and the matching registry-index entry in
+# offline mode.  Validate the complete workspace against each available home
+# and print the selected one for the evaluation log.
+CARGO_PROBE_BIN=""
+for cargo_candidate in \
+    /mnt/root/.cargo/bin/cargo \
+    /root/.cargo/bin/cargo \
+    /mnt/usr/bin/cargo \
+    /usr/bin/cargo
+do
+    if [ -f "$cargo_candidate" ] || [ -L "$cargo_candidate" ]; then
+        CARGO_PROBE_BIN="$cargo_candidate"
+        break
+    fi
+done
+if [ -z "$CARGO_PROBE_BIN" ]; then
+    echo "[buildstorm-run-glibc] no Cargo executable available for offline cache validation" >&2
+    exit 1
+fi
+
+cargo_home_usable() {
+    probe_home=$1
+    [ -d "$probe_home/registry" ] || return 1
+    (
+        cd /mnt/work/tgoskits || exit 1
+        HOME=/root \
+        RUSTUP_HOME=/mnt/root/.rustup \
+        RUSTUP_TOOLCHAIN=nightly-2026-05-28 \
+        CARGO_HOME="$probe_home" \
+        CARGO_NET_OFFLINE=true \
+        PATH=/root/.cargo/bin:/mnt/root/.cargo/bin:/mnt/usr/local/bin:/mnt/usr/bin:/mnt/bin:/bin:/usr/bin \
+            "$CARGO_PROBE_BIN" metadata \
+                --locked \
+                --offline \
+                --format-version 1 \
+                --manifest-path Cargo.toml
+    ) >"$CARGO_PROBE_LOG" 2>&1
+}
+
+BUILDSTORM_CARGO_HOME=""
+for cargo_home_candidate in $BUILDSTORM_CARGO_HOME_CANDIDATES; do
+    if cargo_home_usable "$cargo_home_candidate"; then
+        BUILDSTORM_CARGO_HOME="$cargo_home_candidate"
+        break
+    fi
+    if [ -d "$cargo_home_candidate" ]; then
+        echo "[buildstorm-run-glibc] offline Cargo home rejected: $cargo_home_candidate" >&2
+        tail -5 "$CARGO_PROBE_LOG" >&2 || true
+    fi
+done
+if [ -z "$BUILDSTORM_CARGO_HOME" ]; then
+    echo "[buildstorm-run-glibc] no Cargo home can resolve TGOSKits offline" >&2
+    exit 1
+fi
+echo "[buildstorm-run-glibc] Cargo home: $BUILDSTORM_CARGO_HOME"
+
+# The public evaluation image carries a native debug tg-xtask.  RISC-V can
+# execute it directly.  The LoongArch binary requires the public image's newer
+# glibc, so invoke it through that image's real loader and a private
+# --library-path.  Do not export the public glibc path: cargo/rustc children
+# must continue to use the matched loader/libc pair in the guest rootfs.
+PUBLIC_TG_XTASK=/mnt/work/tgoskits/target/debug/tg-xtask
+BUILDSTORM_TG_XTASK="$PUBLIC_TG_XTASK"
+if [ "$GUEST_ARCH" = loongarch64 ] && [ -x "$PUBLIC_TG_XTASK" ]; then
+    LA_PUBLIC_LOADER=/mnt/lib/loongarch64-linux-gnu/ld-linux-loongarch-lp64d.so.1
+    LA_PUBLIC_LIBRARY_PATH=/mnt/lib/loongarch64-linux-gnu:/mnt/usr/lib/loongarch64-linux-gnu:/mnt/lib64:/mnt/lib:/mnt/usr/lib
+    LA_TG_XTASK_WRAPPER=/root/.cargo/bin/cosmos-la-tg-xtask
+    if [ -f "$LA_PUBLIC_LOADER" ]; then
+        mkdir -p "$(dirname "$LA_TG_XTASK_WRAPPER")"
+        cat >"$LA_TG_XTASK_WRAPPER" <<WRAPPER_EOF
+#!/bin/sh
+set -eu
+exec "$LA_PUBLIC_LOADER" --library-path "$LA_PUBLIC_LIBRARY_PATH" "$PUBLIC_TG_XTASK" "\$@"
+WRAPPER_EOF
+        chmod 0755 "$LA_TG_XTASK_WRAPPER"
+        BUILDSTORM_TG_XTASK="$LA_TG_XTASK_WRAPPER"
+    else
+        BUILDSTORM_TG_XTASK=""
+        echo "[buildstorm-run-glibc] public LoongArch loader not found: $LA_PUBLIC_LOADER" >&2
+    fi
+fi
+
+if [ -n "$BUILDSTORM_TG_XTASK" ] && [ -x "$BUILDSTORM_TG_XTASK" ] && \
+        (cd /mnt/work/tgoskits && \
+         HOME=/root RUSTUP_HOME=/mnt/root/.rustup CARGO_HOME="$BUILDSTORM_CARGO_HOME" \
+            "$BUILDSTORM_TG_XTASK" --help >/dev/null 2>&1); then
+    BUILDSTORM_REUSE_TG_XTASK=1
+    BUILDSTORM_TG_XTASK_SED="s#cargo xtask arceos build#$BUILDSTORM_TG_XTASK arceos build#"
+else
+    BUILDSTORM_REUSE_TG_XTASK=0
+    BUILDSTORM_TG_XTASK_SED='s#cargo xtask arceos build#cargo xtask arceos build#'
+    if [ -x "$PUBLIC_TG_XTASK" ]; then
+        echo "[buildstorm-run-glibc] prebuilt tg-xtask is not runnable; falling back to untimed build" >&2
+    fi
+fi
+export BUILDSTORM_REUSE_TG_XTASK BUILDSTORM_TG_XTASK
+
 # Keep the contest script unchanged on the mounted image, but remap the paths
 # that were written for the original standalone rootfs layout.
 sed \
@@ -107,11 +189,12 @@ sed \
     -e 's#/work/tgoskits#/mnt/work/tgoskits#g' \
     -e 's#/work/.build.rc#/mnt/work/.build.rc#g' \
     -e 's#/work/buildstorm.build.out#/mnt/work/buildstorm.build.out#g' \
-    -e 's#^cargo build -p tg-xtask 2>&1 || true$#if [ "${BUILDSTORM_REUSE_TG_XTASK:-0}" = 1 ]; then echo "[buildstorm-run-glibc] reusing tg-xtask: /mnt/work/tgoskits/target/debug/tg-xtask"; else cargo build -p tg-xtask 2>\&1 || true; fi#' \
+    -e 's#^cargo build -p tg-xtask 2>&1 || true$#if [ "${BUILDSTORM_REUSE_TG_XTASK:-0}" = 1 ]; then echo "[buildstorm-run-glibc] reusing tg-xtask: ${BUILDSTORM_TG_XTASK}"; else cargo build -p tg-xtask 2>\&1 || true; fi#' \
     -e "$BUILDSTORM_TG_XTASK_SED" \
     "$SCRIPT" > "$TMP" || exit 2
 
 /bin/sh "$TMP" "$@"
 status=$?
-rm -f "$TMP"
+cleanup
+trap - EXIT HUP INT TERM
 exit "$status"
