@@ -39,6 +39,12 @@ WITH_GLIBC_HOST_SYSROOT ?= 0
 # Keep the optional in-rootfs cross Rust toolchain off by default.
 WITH_RUST ?= 0
 WITH_LIBCLANG ?= $(WITH_RUST)
+# In pivot mode this filesystem is only a static bootstrap environment.  The
+# public evaluation disk supplies the real userland, compilers, Rust toolchain,
+# Cargo cache, and test programs after /mnt becomes /.  Keep the old complete
+# rootfs recipe available with BOOTSTRAP_ONLY=0.
+BOOTSTRAP_ONLY ?= 1
+BOOTSTRAP_ONLY_ENABLED := $(if $(filter 1 yes true on,$(BOOTSTRAP_ONLY)),1,0)
 
 export TARGET
 export CROSS_PREFIX
@@ -84,7 +90,11 @@ ifneq ($(filter 1 yes true on,$(WITH_LIBCLANG)),)
 ENABLED_OPTIONAL_SCRIPT_NAMES += build-libclang-riscv64
 endif
 ROOTFS_INIT_OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(call uniq,$(ENABLED_OPTIONAL_SCRIPT_NAMES))))
+ifeq ($(BOOTSTRAP_ONLY_ENABLED),1)
+ROOTFS_INIT_SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT))
+else
 ROOTFS_INIT_SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(REQUIRED_SCRIPTS) $(ROOTFS_INIT_OPTIONAL_SCRIPTS) $(if $(wildcard $(ACCOUNT_SCRIPT)),$(ACCOUNT_SCRIPT))
+endif
 SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(REQUIRED_SCRIPTS) $(OPTIONAL_SCRIPTS) $(if $(wildcard $(ACCOUNT_SCRIPT)),$(ACCOUNT_SCRIPT))
 SCRIPT_NAMES := $(basename $(notdir $(SCRIPTS)))
 SCRIPT_RV_TARGETS := $(addsuffix -rv,$(SCRIPT_NAMES))
@@ -95,7 +105,9 @@ SCRIPT_LA_TARGETS := $(addsuffix -la,$(SCRIPT_NAMES))
 .PHONY: rootfs-init prepare-rootfs list clean clean-stamps help _run-script $(SCRIPT_NAMES) $(SCRIPT_RV_TARGETS) $(SCRIPT_LA_TARGETS)
 
 prepare-rootfs:
-	@if [[ "$(ROOTFS_DIR)" != "$(ROOTFS_BASE_DIR)" && ! -d "$(ROOTFS_DIR)" ]]; then \
+	@if [ "$(BOOTSTRAP_ONLY_ENABLED)" = 1 ]; then \
+		mkdir -p "$(ROOTFS_DIR)"; \
+	elif [[ "$(ROOTFS_DIR)" != "$(ROOTFS_BASE_DIR)" && ! -d "$(ROOTFS_DIR)" ]]; then \
 		if [[ ! -d "$(ROOTFS_BASE_DIR)" ]]; then \
 			echo "[ERROR] base rootfs directory not found: $(ROOTFS_BASE_DIR)" >&2; \
 			exit 1; \
@@ -182,6 +194,7 @@ clean:
 help:
 	@echo "Targets:"
 	@echo "  make rootfs-init   Run the default script set once, tracked by build stamps"
+	@echo "                     BOOTSTRAP_ONLY=1 keeps only static BusyBox for pivot_root"
 	@echo "                     Optional packages:"
 	@echo "                       WITH_BUILD_ESSENTIAL=1 enables libc/libstdc++ headers and dev libs"
 	@echo "                       WITH_NATIVE_GCC=1 enables build-musl-dev + build-gcc-native"

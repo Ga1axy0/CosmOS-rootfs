@@ -9,5 +9,6 @@
 /rootfs/lib/
 /rootfs/sbin/*
 !/rootfs/sbin/init
+!/rootfs/sbin/pivot-eval-root
 /rootfs-la/
 /rootfs-rv/

@@ -13,6 +13,8 @@ set -u
 
 CAGENT_RUNNER=${CAGENT_RUNNER:-/root/cagent-run-glibc}
 BUILDSTORM_RUNNER=${BUILDSTORM_RUNNER:-/root/buildstorm-run-glibc}
+CAGENT_WORKDIR=${CAGENT_WORKDIR:-}
+BUILDSTORM_WORKDIR=${BUILDSTORM_WORKDIR:-}
 DEFAULT_MODE=${FINAL_AUTO_DEFAULT:-all}
 
 usage() {
@@ -77,8 +79,7 @@ fi
 
 if [ "$WAIT" -eq 1 ]; then
     interrupted=0
-    on_interrupt() {
-        interrupted=1
+    cancel_to_shell() {
         echo
         echo "[final_auto_run] interrupted; returning to the shell"
         # `/sbin/init` starts this script as PID 1.  Returning with `exit 130`
@@ -86,7 +87,15 @@ if [ "$WAIT" -eq 1 ]; then
         # interactive shell promised by the countdown.  Replace the runner
         # with a login shell while keeping the same controlling tty.
         trap - INT
-        exec /bin/bash --login
+        if [ -x /bin/bash ]; then
+            exec /bin/bash --login
+        fi
+        exec /bin/sh --login
+    }
+
+    on_interrupt() {
+        interrupted=1
+        cancel_to_shell
     }
     trap on_interrupt INT
 
@@ -94,7 +103,14 @@ if [ "$WAIT" -eq 1 ]; then
     seconds=10
     while [ "$seconds" -gt 0 ]; do
         printf '\r[final_auto_run] starting in %2ss...' "$seconds"
-        sleep 1
+        # Some /bin/sh implementations defer a trapped SIGINT until the
+        # foreground child exits.  In that case the trap above is not run, but
+        # sleep still returns non-zero.  Do not ignore that status: otherwise
+        # Ctrl-C merely skips a few seconds and the automatic tests continue.
+        if ! sleep 1; then
+            interrupted=1
+            cancel_to_shell
+        fi
         seconds=$((seconds - 1))
     done
     printf '\n'
@@ -107,7 +123,11 @@ run_cagent() {
         echo "[final_auto_run] missing executable: $CAGENT_RUNNER" >&2
         return 127
     fi
-    "$CAGENT_RUNNER" "$@"
+    if [ -n "$CAGENT_WORKDIR" ]; then
+        (cd "$CAGENT_WORKDIR" && "$CAGENT_RUNNER" "$@")
+    else
+        "$CAGENT_RUNNER" "$@"
+    fi
 }
 
 run_buildstorm() {
@@ -116,7 +136,11 @@ run_buildstorm() {
         echo "[final_auto_run] missing executable: $BUILDSTORM_RUNNER" >&2
         return 127
     fi
-    "$BUILDSTORM_RUNNER" "$@"
+    if [ -n "$BUILDSTORM_WORKDIR" ]; then
+        (cd "$BUILDSTORM_WORKDIR" && "$BUILDSTORM_RUNNER" "$@")
+    else
+        "$BUILDSTORM_RUNNER" "$@"
+    fi
 }
 
 status=0

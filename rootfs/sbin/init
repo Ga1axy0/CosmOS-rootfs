@@ -1,2 +1,16 @@
-#!/bin/bash
-exec /bin/bash --login /root/final_auto_run
+#!/bin/sh
+
+if [ -e /etc/cosmos-pivot-eval-root ] \
+    && [ -x /mnt/bin/sh ] \
+    && [ -x /mnt/glibc/cagent_testcode.sh ] \
+    && [ -x /mnt/glibc/buildstorm_testcode.sh ]; then
+    exec /sbin/pivot-eval-root
+fi
+
+if [ -x /bin/bash ]; then
+    exec /bin/bash --login /root/final_auto_run
+fi
+
+# The bootstrap-only image intentionally has no bash.  Leave a usable BusyBox
+# shell if the public evaluation disk is absent or does not look complete.
+exec /bin/sh --login
