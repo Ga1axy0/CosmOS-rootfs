@@ -70,15 +70,11 @@ echo "[pivot-eval-root] root switched; old root is at $OLD_ROOT"
 # scripts from their native locations in the new root. Copy the tiny runner
 # out before lazily detaching the bootstrap filesystem.
 RUNNER=/tmp/cosmos-final-auto-run
+BOOTSTRAP_BUSYBOX="$OLD_ROOT/bin/busybox"
 if [ -x "$OLD_ROOT/root/final_auto_run" ] && [ -x "$OLD_ROOT/bin/busybox" ]; then
-    "$OLD_ROOT/bin/busybox" cp "$OLD_ROOT/root/final_auto_run" "$RUNNER" \
+    "$BOOTSTRAP_BUSYBOX" cp "$OLD_ROOT/root/final_auto_run" "$RUNNER" \
         || fail "cannot copy final_auto_run into the new root"
-    "$OLD_ROOT/bin/busybox" chmod 0755 "$RUNNER" || true
-fi
-
-if [ -x "$OLD_ROOT/bin/busybox" ]; then
-    "$OLD_ROOT/bin/busybox" umount -l "$OLD_ROOT" \
-        || echo "[pivot-eval-root] warning: old root remains mounted" >&2
+    "$BOOTSTRAP_BUSYBOX" chmod 0755 "$RUNNER" || true
 fi
 
 HOME=/root
@@ -91,71 +87,22 @@ if [ -x "$RUNNER" ]; then
     # The legacy bootstrap invokes cagent-run-glibc, which already retries a
     # failed agent invocation.  After pivot_root that wrapper lives on the
     # detached bootstrap root, while final_auto_run is copied into the new
-    # root, so invoking /glibc/cagent_testcode.sh directly would silently lose
-    # the retry mitigation.  Generate a pivot-native runner instead.
+    # root, so invoke a static pivot-native runner instead.
     PIVOT_CAGENT_RUNNER=/tmp/cosmos-cagent-runner
-    cat >"$PIVOT_CAGENT_RUNNER" <<'EOF'
-#!/bin/sh
-
-BASE=/glibc
-SCRIPT="$BASE/cagent_testcode.sh"
-TMP_SCRIPT=/tmp/cosmos-cagent-testcode.$$
-RETRY_AGENT=/tmp/cosmos-cagent-agent-retry.$$
-
-cleanup() {
-    rm -f "$TMP_SCRIPT" "$RETRY_AGENT"
-}
-
-trap cleanup EXIT HUP INT TERM
-
-if [ ! -f "$SCRIPT" ] && [ -f "$BASE/cagent.sh" ]; then
-    SCRIPT="$BASE/cagent.sh"
-fi
-
-export CAGENT_REAL_AGENT="$BASE/agent_lite"
-# Keep this limit fixed for the pivot evaluation path.
-export CAGENT_AGENT_ATTEMPTS=5
-
-cat >"$RETRY_AGENT" <<'RETRY_EOF'
-#!/bin/sh
-
-attempt=1
-max_attempts=5
-
-while :; do
-    "$CAGENT_REAL_AGENT" "$@"
-    status=$?
-    if [ "$status" -eq 0 ] || [ "$attempt" -ge "$max_attempts" ]; then
-        exit "$status"
-    fi
-    attempt=$((attempt + 1))
-    sleep 0.05
-done
-RETRY_EOF
-chmod 755 "$RETRY_AGENT" || exit 2
-
-# The official script starts every run_test in the background.  Remove the
-# test-job bookkeeping and every trailing '&' except the one that starts the
-# simple_llm_server.  Do not depend on the exact line wrapping of the public
-# script: some image revisions put '&' on the run_test line instead of the
-# numeric timeout line.
-sed \
-    -e "s#\\./agent_lite#$RETRY_AGENT#g" \
-    -e 's/\\r$//' \
-    -e '/TEST_PIDS/d' \
-    -e '/simple_llm_server/! s/[[:space:]]*&[[:space:]]*$//' \
-    "$SCRIPT" >"$TMP_SCRIPT" || exit 2
-chmod 755 "$TMP_SCRIPT" || exit 2
-
-cd "$BASE" || exit 2
-/bin/bash "$TMP_SCRIPT" "$@"
-status=$?
-cleanup
-trap - EXIT HUP INT TERM
-exit "$status"
-EOF
-    chmod 755 "$PIVOT_CAGENT_RUNNER" \
+    PIVOT_CAGENT_RETRY_TEMPLATE=/tmp/cosmos-cagent-agent-retry-template
+    "$BOOTSTRAP_BUSYBOX" cp "$OLD_ROOT/sbin/pivot-cagent-runner" \
+        "$PIVOT_CAGENT_RUNNER" \
+        || fail "cannot copy pivot CAgent runner"
+    "$BOOTSTRAP_BUSYBOX" cp "$OLD_ROOT/sbin/pivot-cagent-retry" \
+        "$PIVOT_CAGENT_RETRY_TEMPLATE" \
+        || fail "cannot copy pivot CAgent retry helper"
+    "$BOOTSTRAP_BUSYBOX" chmod 755 "$PIVOT_CAGENT_RUNNER" \
         || fail "cannot create pivot CAgent runner"
+    "$BOOTSTRAP_BUSYBOX" chmod 755 "$PIVOT_CAGENT_RETRY_TEMPLATE" \
+        || fail "cannot create pivot CAgent retry helper"
+
+    "$BOOTSTRAP_BUSYBOX" umount -l "$OLD_ROOT" \
+        || echo "[pivot-eval-root] warning: old root remains mounted" >&2
 
     CAGENT_RUNNER="$PIVOT_CAGENT_RUNNER"
     BUILDSTORM_RUNNER=/glibc/buildstorm_testcode.sh
@@ -164,6 +111,11 @@ EOF
     export CAGENT_RUNNER BUILDSTORM_RUNNER CAGENT_WORKDIR BUILDSTORM_WORKDIR
     echo "[pivot-eval-root] CAgent mode: serial, agent attempts: 5"
     exec /bin/sh "$RUNNER" "$@"
+fi
+
+if [ -x "$BOOTSTRAP_BUSYBOX" ]; then
+    "$BOOTSTRAP_BUSYBOX" umount -l "$OLD_ROOT" \
+        || echo "[pivot-eval-root] warning: old root remains mounted" >&2
 fi
 
 if [ -x /sbin/init ]; then
