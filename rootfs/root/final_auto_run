@@ -163,6 +163,18 @@ esac
 
 if [ "$status" -eq 0 ]; then
     echo "[final_auto_run] all requested tests passed"
+
+    # Keep both architecture guests alive after the evaluator has reported
+    # success.  The remote runner may terminate the other architecture when
+    # one guest exits, so wait for the full grace period before returning from
+    # the common PID 1 entry point.
+    remaining_wait=1800
+    echo "[final_auto_run] waiting 30 minutes before exit"
+    while [ "$remaining_wait" -gt 0 ]; do
+        sleep 300
+        remaining_wait=$((remaining_wait - 300))
+        echo "[final_auto_run] remaining wait time: $((remaining_wait / 60)) minutes"
+    done
 else
     echo "[final_auto_run] tests failed (rc=$status)" >&2
 fi
