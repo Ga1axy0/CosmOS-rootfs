@@ -1,16 +1,27 @@
 #!/bin/sh
 
-if [ -e /etc/cosmos-pivot-eval-root ] \
-    && [ -x /mnt/bin/sh ] \
-    && [ -x /mnt/glibc/cagent_testcode.sh ] \
+echo "[init] probing mounted test image at /mnt"
+
+if [ -x /mnt/bin/sh ]; then
+    mounted_shell="executable"
+else
+    mounted_shell="missing"
+fi
+
+if [ -x /mnt/glibc/cagent_testcode.sh ] \
     && [ -x /mnt/glibc/buildstorm_testcode.sh ]; then
+    mounted_final_tests="present"
+else
+    mounted_final_tests="missing"
+fi
+
+echo "[init] probe: /mnt/bin/sh=$mounted_shell, final-testcodes=$mounted_final_tests"
+
+if [ "$mounted_shell" = "executable" ] \
+    && [ "$mounted_final_tests" = "present" ]; then
+    echo "[init] decision: final image; pivot_root /mnt and run final_auto_run"
     exec /sbin/pivot-eval-root
 fi
 
-if [ -x /bin/bash ]; then
-    exec /bin/bash --login /root/final_auto_run
-fi
-
-# The bootstrap-only image intentionally has no bash.  Leave a usable BusyBox
-# shell if the public evaluation disk is absent or does not look complete.
-exec /bin/sh --login
+echo "[init] decision: preliminary image; keep bootstrap root and run ltp-auto-run"
+exec /bin/bash --login /root/ltp-auto-run

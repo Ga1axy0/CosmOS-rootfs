@@ -101,8 +101,8 @@ if [ -x "$RUNNER" ]; then
     "$BOOTSTRAP_BUSYBOX" chmod 755 "$PIVOT_CAGENT_RETRY_TEMPLATE" \
         || fail "cannot create pivot CAgent retry helper"
 
-    "$BOOTSTRAP_BUSYBOX" umount -l "$OLD_ROOT" \
-        || echo "[pivot-eval-root] warning: old root remains mounted" >&2
+    # "$BOOTSTRAP_BUSYBOX" umount -l "$OLD_ROOT" \
+    #    || echo "[pivot-eval-root] warning: old root remains mounted" >&2
 
     CAGENT_RUNNER="$PIVOT_CAGENT_RUNNER"
     BUILDSTORM_RUNNER=/glibc/buildstorm_testcode.sh

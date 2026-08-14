@@ -32,7 +32,7 @@ LA_MUSL_ARCH ?= loongarch64
 COMMON_LDFLAGS ?= -static
 
 WITH_VIM ?= 1
-WITH_BUILD_ESSENTIAL ?= 1
+WITH_BUILD_ESSENTIAL ?= 0
 WITH_NATIVE_GCC ?= 0
 WITH_GLIBC_HOST_SYSROOT ?= 0
 # The RV competition image gets Rust from the mounted test disk under /mnt.
@@ -43,7 +43,7 @@ WITH_LIBCLANG ?= $(WITH_RUST)
 # public evaluation disk supplies the real userland, compilers, Rust toolchain,
 # Cargo cache, and test programs after /mnt becomes /.  Keep the old complete
 # rootfs recipe available with BOOTSTRAP_ONLY=0.
-BOOTSTRAP_ONLY ?= 1
+BOOTSTRAP_ONLY ?= 0
 BOOTSTRAP_ONLY_ENABLED := $(if $(filter 1 yes true on,$(BOOTSTRAP_ONLY)),1,0)
 
 export TARGET
@@ -65,9 +65,14 @@ export MUSL_ARCH
 PRIORITY_SCRIPT := $(SCRIPTS_DIR)/build-busybox.sh
 ACCOUNT_SCRIPT := $(SCRIPTS_DIR)/build-shadow.sh
 HELPER_SCRIPTS := $(COMMON_SCRIPT)
+# These scripts are copied into the generated rootfs and invoked by the
+# pivoted evaluator at runtime.  They are not package-build recipes and must
+# not be executed by rootfs-init on the host.
+RUNTIME_SCRIPTS := $(SCRIPTS_DIR)/pivot-cagent-retry.sh \
+	$(SCRIPTS_DIR)/pivot-cagent-runner.sh
 OPTIONAL_SCRIPT_NAMES := build-musl-dev build-gcc-native build-ncurses build-vim build-glibc-host-sysroot build-zlib-glibc build-pkgconf build-libudev-zero build-rust build-libclang-riscv64
 OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(OPTIONAL_SCRIPT_NAMES)))
-PACKAGE_SCRIPTS := $(filter-out $(PRIORITY_SCRIPT) $(ACCOUNT_SCRIPT) $(HELPER_SCRIPTS),$(sort $(wildcard $(SCRIPTS_DIR)/*.sh)))
+PACKAGE_SCRIPTS := $(filter-out $(PRIORITY_SCRIPT) $(ACCOUNT_SCRIPT) $(HELPER_SCRIPTS) $(RUNTIME_SCRIPTS),$(sort $(wildcard $(SCRIPTS_DIR)/*.sh)))
 REQUIRED_SCRIPTS := $(filter-out $(OPTIONAL_SCRIPTS),$(PACKAGE_SCRIPTS))
 ENABLED_OPTIONAL_SCRIPT_NAMES :=
 uniq = $(if $1,$(firstword $1) $(call uniq,$(filter-out $(firstword $1),$1)))
@@ -91,7 +96,11 @@ ENABLED_OPTIONAL_SCRIPT_NAMES += build-libclang-riscv64
 endif
 ROOTFS_INIT_OPTIONAL_SCRIPTS := $(addprefix $(SCRIPTS_DIR)/,$(addsuffix .sh,$(call uniq,$(ENABLED_OPTIONAL_SCRIPT_NAMES))))
 ifeq ($(BOOTSTRAP_ONLY_ENABLED),1)
-ROOTFS_INIT_SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT))
+# The bootstrap is also the runtime for the preliminary test image.  Keep a
+# static Bash interpreter alongside BusyBox so ltp-auto-run can be selected at
+# boot before a final image is pivoted into place.
+ROOTFS_INIT_SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) \
+	$(if $(wildcard $(SCRIPTS_DIR)/build-bash.sh),$(SCRIPTS_DIR)/build-bash.sh)
 else
 ROOTFS_INIT_SCRIPTS := $(if $(wildcard $(PRIORITY_SCRIPT)),$(PRIORITY_SCRIPT)) $(REQUIRED_SCRIPTS) $(ROOTFS_INIT_OPTIONAL_SCRIPTS) $(if $(wildcard $(ACCOUNT_SCRIPT)),$(ACCOUNT_SCRIPT))
 endif
@@ -194,7 +203,7 @@ clean:
 help:
 	@echo "Targets:"
 	@echo "  make rootfs-init   Run the default script set once, tracked by build stamps"
-	@echo "                     BOOTSTRAP_ONLY=1 keeps only static BusyBox for pivot_root"
+	@echo "                     BOOTSTRAP_ONLY=1 keeps static BusyBox/Bash for image detection and LTP"
 	@echo "                     Optional packages:"
 	@echo "                       WITH_BUILD_ESSENTIAL=1 enables libc/libstdc++ headers and dev libs"
 	@echo "                       WITH_NATIVE_GCC=1 enables build-musl-dev + build-gcc-native"
