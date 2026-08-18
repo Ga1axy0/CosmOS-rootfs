@@ -23,8 +23,38 @@ fail() {
     || fail "new root has no BuildStorm evaluator"
 mkdir -p "$PUT_OLD" || fail "cannot create $PUT_OLD"
 
-echo "[pivot-eval-root] waiting 10s before pivot_root"
-/bin/busybox sleep 10 || fail "failed to wait before pivot_root"
+cancel_to_shell() {
+    echo
+    echo "[pivot-eval-root] interrupted; keeping the bootstrap root and returning to the shell"
+    # This script is on PID 1's exec chain.  Do not return from an INT trap:
+    # that would terminate init and make the kernel shut the guest down.
+    trap - INT
+    if [ -x /bin/bash ]; then
+        exec /bin/bash --login
+    fi
+    exec /bin/sh --login
+}
+
+on_interrupt() {
+    cancel_to_shell
+}
+
+# Match final_auto_run's cancellation semantics before changing the mount
+# namespace.  Some /bin/sh implementations defer a trapped SIGINT while the
+# foreground child is running, so treat a failed sleep as an interruption too.
+trap on_interrupt INT
+echo "[pivot-eval-root] waiting 10s before pivot_root (Ctrl-C to cancel)"
+seconds=10
+while [ "$seconds" -gt 0 ]; do
+    printf '\r[pivot-eval-root] switching root in %2ss...' "$seconds"
+    if ! /bin/busybox sleep 1; then
+        cancel_to_shell
+    fi
+    seconds=$((seconds - 1))
+done
+printf '\n'
+trap - INT
+
 echo "[pivot-eval-root] switching root to $NEW_ROOT"
 
 moved=""
