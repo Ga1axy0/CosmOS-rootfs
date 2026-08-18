@@ -23,6 +23,8 @@ fail() {
     || fail "new root has no BuildStorm evaluator"
 mkdir -p "$PUT_OLD" || fail "cannot create $PUT_OLD"
 
+echo "[pivot-eval-root] waiting 10s before pivot_root"
+/bin/busybox sleep 10 || fail "failed to wait before pivot_root"
 echo "[pivot-eval-root] switching root to $NEW_ROOT"
 
 moved=""
